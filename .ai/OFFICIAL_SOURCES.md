@@ -1,0 +1,9 @@
+https://cmake.org/documentation/
+https://crowcpp.org/master/
+https://github.com/crowcpp/crow
+https://sqlite.org/docs.html
+https://sqlite.org/c3ref/intro.html
+https://github.com/ggml-org/whisper.cpp
+https://react.dev/
+https://vitejs.dev/
+https://nodejs.org/docs/latest/api/
