@@ -16,10 +16,12 @@ Documentación oficial y repositorio de Crow, el framework REST de Hermes.
 # Explanation
 
 Fuentes oficiales:
-- https://crowcpp.org/master/
+- https://crowcpp.org/master/ (verificada 2026-07-24: "fast and easy to use microframework for the web" para servicios HTTP y WebSocket en C++, inspirado en Flask)
 - https://github.com/crowcpp/crow
+- https://crowcpp.org/master/guides/ (listada en `docs/documentation_tech.yml`; al verificar el 2026-07-24 esta ruta específica devolvió 404 — el contenido de guías puede haberse reorganizado. Usar la raíz `https://crowcpp.org/master/` como punto de entrada confiable hasta reconfirmar la ruta.)
+- https://crowcpp.org/master/reference/ (listada en `docs/documentation_tech.yml`, pendiente de verificar)
 
-Crow es un micro-framework web para C++ inspirado en Flask/Express, elegido en [[ADR-003 - Crow como Framework REST]].
+Crow es un micro-framework web para C++ inspirado en Flask/Express, elegido en [[ADR-003 - Crow como Framework REST]]. Las rutas se definen con la macro `CROW_ROUTE(app, "/ruta")` seguida de un lambda con la lógica del handler.
 
 # Why it matters
 
@@ -46,3 +48,4 @@ Ver pendiente: nota atómica "Crow Routing" en [[06 Frameworks]] (Knowledge Back
 
 - https://crowcpp.org/master/ (Priority 2)
 - https://github.com/crowcpp/crow (Priority 4)
+- docs/documentation_tech.yml (Priority 2, categoría `crow`)

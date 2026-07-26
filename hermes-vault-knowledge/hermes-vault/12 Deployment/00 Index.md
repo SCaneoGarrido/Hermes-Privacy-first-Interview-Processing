@@ -23,6 +23,8 @@ Contenido previsto, derivado de [[Sprint 12 - Release]]:
 
 Ninguno de estos temas está en `.ai/KNOWLEDGE_BACKLOG.md` todavía; se han inferido de README.md y deberían incorporarse formalmente al backlog oficial cuando se prioricen.
 
+Fuente de apoyo confirmada el 2026-07-24: [[Windows Development - Microsoft Learn]].
+
 # Why it matters
 
 El objetivo de largo plazo del proyecto ("instalar Hermes en menos de 10 minutos", ver [[Hermes - Vision General]]) depende directamente de que esta sección se documente bien antes del release 1.0.
@@ -42,7 +44,9 @@ Ver [[Sprint 12 - Release]] para los entregables planificados.
 # Related Notes
 
 - [[Sprint 12 - Release]]
+- [[Windows Development - Microsoft Learn]]
 
 # References
 
 - README.md (Priority 2)
+- docs/documentation_tech.yml (Priority 2, categoría `windows`)

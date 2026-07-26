@@ -18,7 +18,16 @@ endif()
 project(backend)
 
 find_package(Crow CONFIG REQUIRED)
-add_executable(backend main.cpp)
+add_executable(backend
+                main.cpp
+                api/controllers/fileController.cpp
+                api/controllers/healthController.cpp
+                api/shared/utils/logger.cpp
+                api/helpers/fileController.helper.cpp
+            )
+
+target_compile_features(backend PRIVATE cxx_std_20)
+set_target_properties(backend PROPERTIES CMAKE_CXX_EXTENSIONS OFF)
 
 target_link_libraries(backend PRIVATE Crow::Crow)
 

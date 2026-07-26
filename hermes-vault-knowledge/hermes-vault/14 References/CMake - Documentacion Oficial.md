@@ -15,9 +15,12 @@ Documentación oficial de CMake, el sistema de build usado por Hermes.
 
 # Explanation
 
-Fuente oficial: https://cmake.org/documentation/
+Fuentes oficiales:
+- https://cmake.org/documentation/
+- https://cmake.org/cmake/help/latest/ (referencia completa de comandos y variables)
+- https://cmake.org/cmake/help/latest/guide/tutorial/ (tutorial oficial paso a paso, verificado 2026-07-24: 11 pasos desde un ejecutable básico hasta testing, instalación y gestión de dependencias; menciona `CMakePresets.json` en el paso 3 sin profundizar en el detalle)
 
-CMake genera los archivos de build (Makefiles, Ninja, Visual Studio) a partir de los `CMakeLists.txt` del proyecto. Es la herramienta que orquesta la compilación de Hermes junto con vcpkg para la resolución de dependencias.
+CMake genera los archivos de build (Makefiles, Ninja, Visual Studio) a partir de los `CMakeLists.txt` del proyecto. Es la herramienta que orquesta la compilación de Hermes junto con [[vcpkg - Documentacion Oficial|vcpkg]] para la resolución de dependencias.
 
 # Why it matters
 
@@ -42,3 +45,5 @@ Ver pendiente: nota atómica "CMake Presets" en [[06 Frameworks]] (Knowledge Bac
 # References
 
 - https://cmake.org/documentation/ (Priority 2, .ai/OFFICIAL_SOURCES.md)
+- https://cmake.org/cmake/help/latest/ (Priority 2, docs/documentation_tech.yml)
+- https://cmake.org/cmake/help/latest/guide/tutorial/ (Priority 2, docs/documentation_tech.yml)

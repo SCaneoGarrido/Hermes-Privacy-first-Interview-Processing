@@ -20,7 +20,7 @@ Temas identificados en `.ai/KNOWLEDGE_BACKLOG.md` (alta prioridad) aún sin nota
 - [ ] Crow Routing
 - [ ] CMake Presets
 
-Fuentes previstas: [[Crow - Documentacion Oficial]], [[CMake - Documentacion Oficial]].
+Fuentes previstas: [[Crow - Documentacion Oficial]], [[CMake - Documentacion Oficial]]. El gestor de paquetes [[vcpkg - Documentacion Oficial|vcpkg]], aunque no es un framework, es la pieza que integra estas dependencias con CMake (ver [[Sprint 0 - Foundation]]).
 
 # Why it matters
 
@@ -42,7 +42,9 @@ Referenciado por [[Sprint 0 - Foundation]] y [[Sprint 1 - Core API]].
 
 - [[Crow - Documentacion Oficial]]
 - [[CMake - Documentacion Oficial]]
+- [[vcpkg - Documentacion Oficial]]
 
 # References
 
 - .ai/KNOWLEDGE_BACKLOG.md (Priority 1)
+- docs/documentation_tech.yml (Priority 2, categorías `crow`, `cmake`, `vcpkg`)

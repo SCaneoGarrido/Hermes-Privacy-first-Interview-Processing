@@ -26,7 +26,7 @@ Temas identificados en `.ai/KNOWLEDGE_BACKLOG.md` aún sin nota atómica dedicad
 - [ ] SIMD
 - [ ] Benchmarking
 
-Fuente prevista: [[Libro - Professional C++ 5th Edition (Marc Gregoire)]] y cppreference (Priority 5, cuando haya acceso a Internet).
+Fuente prevista: [[Libro - Professional C++ 5th Edition (Marc Gregoire)]] y [[C++ - Referencias del Lenguaje]] (cppreference + C++ Core Guidelines, ya verificadas el 2026-07-24 vía `docs/documentation_tech.yml`).
 
 # Why it matters
 
@@ -49,7 +49,9 @@ Ver uso concreto de estos conceptos en [[Hermes Coding Standard]] y [[ADR-002 - 
 - [[ADR-002 - C++20 como Lenguaje]]
 - [[Hermes Coding Standard]]
 - [[Libro - Professional C++ 5th Edition (Marc Gregoire)]]
+- [[C++ - Referencias del Lenguaje]]
 
 # References
 
 - .ai/KNOWLEDGE_BACKLOG.md (Priority 1)
+- docs/documentation_tech.yml (Priority 2, categoría `cpp`)

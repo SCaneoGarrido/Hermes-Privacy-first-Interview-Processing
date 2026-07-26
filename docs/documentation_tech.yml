@@ -1,0 +1,202 @@
+version: "1.0"
+
+project:
+  name: Hermes
+  description: Official documentation sources approved for the Hermes project.
+
+rules:
+  priority:
+    - Official Documentation
+    - Official GitHub Repository
+    - Language Reference
+    - Microsoft Learn
+    - Standards (ISO / WG21)
+    - Approved Books
+
+  avoid:
+    - Random blogs
+    - Medium
+    - Stack Overflow as primary documentation
+    - AI generated tutorials without verification
+
+sources:
+
+  cpp:
+    name: C++ Language
+    official:
+      - https://isocpp.org/
+      - https://en.cppreference.com/
+      - https://isocpp.github.io/CppCoreGuidelines/CppCoreGuidelines
+      - https://wg21.link/
+
+  cmake:
+    name: CMake
+    official:
+      - https://cmake.org/documentation/
+      - https://cmake.org/cmake/help/latest/
+      - https://cmake.org/cmake/help/latest/guide/tutorial/
+
+  vcpkg:
+    name: vcpkg
+    official:
+      - https://learn.microsoft.com/vcpkg/
+      - https://github.com/microsoft/vcpkg
+
+  crow:
+    name: Crow C++ Web Framework
+    official:
+      - https://crowcpp.org/master/
+      - https://crowcpp.org/master/guides/
+      - https://crowcpp.org/master/reference/
+      - https://github.com/CrowCpp/Crow
+
+  sqlite:
+    name: SQLite
+    official:
+      - https://sqlite.org/docs.html
+      - https://sqlite.org/c3ref/funclist.html
+      - https://sqlite.org/lang.html
+
+  ollama:
+    name: Ollama
+    official:
+      - https://ollama.com/
+      - https://github.com/ollama/ollama
+      - https://github.com/ollama/ollama/tree/main/docs
+      - https://github.com/ollama/ollama/blob/main/docs/api.md
+
+  whispercpp:
+    name: whisper.cpp
+    official:
+      - https://github.com/ggml-org/whisper.cpp
+      - https://github.com/ggml-org/whisper.cpp/tree/master/examples
+
+  ggml:
+    name: ggml
+    official:
+      - https://github.com/ggml-org/ggml
+
+  react:
+    name: React
+    official:
+      - https://react.dev/
+
+  typescript:
+    name: TypeScript
+    official:
+      - https://www.typescriptlang.org/docs/
+
+  vite:
+    name: Vite
+    official:
+      - https://vitejs.dev/guide/
+
+  node:
+    name: Node.js
+    official:
+      - https://nodejs.org/docs/latest/api/
+
+  spdlog:
+    name: spdlog
+    official:
+      - https://github.com/gabime/spdlog
+      - https://github.com/gabime/spdlog/wiki
+
+  fmt:
+    name: fmt
+    official:
+      - https://fmt.dev/latest/index.html
+      - https://github.com/fmtlib/fmt
+
+  nlohmann_json:
+    name: nlohmann/json
+    official:
+      - https://json.nlohmann.me/
+      - https://github.com/nlohmann/json
+
+  catch2:
+    name: Catch2
+    official:
+      - https://catch2-temp.readthedocs.io/en/latest/
+      - https://github.com/catchorg/Catch2
+
+  doctest:
+    name: doctest
+    official:
+      - https://github.com/doctest/doctest
+
+  openssl:
+    name: OpenSSL
+    official:
+      - https://docs.openssl.org/
+      - https://github.com/openssl/openssl
+
+  boost:
+    name: Boost
+    official:
+      - https://www.boost.org/doc/
+
+  git:
+    name: Git
+    official:
+      - https://git-scm.com/doc
+
+  github:
+    name: GitHub
+    official:
+      - https://docs.github.com/
+
+  markdown:
+    name: Markdown
+    official:
+      - https://www.markdownguide.org/
+
+  http:
+    name: HTTP
+    official:
+      - https://developer.mozilla.org/docs/Web/HTTP
+
+  json:
+    name: JSON
+    official:
+      - https://www.json.org/json-en.html
+
+  rest:
+    name: REST API Design
+    official:
+      - https://learn.microsoft.com/azure/architecture/best-practices/api-design
+
+  unicode:
+    name: Unicode
+    official:
+      - https://home.unicode.org/
+
+  windows:
+    name: Windows Development
+    official:
+      - https://learn.microsoft.com/windows/
+
+  msvc:
+    name: MSVC
+    official:
+      - https://learn.microsoft.com/cpp/
+
+  visual_studio:
+    name: Visual Studio
+    official:
+      - https://learn.microsoft.com/visualstudio/
+
+  vscode:
+    name: Visual Studio Code
+    official:
+      - https://code.visualstudio.com/docs
+
+  obsidian:
+    name: Obsidian
+    official:
+      - https://help.obsidian.md/
+
+  obsidian_mcp:
+    name: Obsidian MCP
+    official:
+      - https://github.com/modelcontextprotocol

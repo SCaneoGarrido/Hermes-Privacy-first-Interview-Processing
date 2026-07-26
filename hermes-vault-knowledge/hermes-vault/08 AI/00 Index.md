@@ -22,6 +22,8 @@ Temas identificados en `.ai/KNOWLEDGE_BACKLOG.md` (alta prioridad):
 
 Adicionalmente, pendiente documentar el modelo por defecto **Qwen** (.ai/PROJECT.md) como nota propia una vez se investigue su configuración concreta en Hermes.
 
+Fuentes ya confirmadas el 2026-07-24 para desarrollar estos temas: [[whisper.cpp - Repositorio Oficial]] (que a su vez depende de [[ggml - Repositorio Oficial|ggml]]) y [[Ollama - Documentacion Oficial]] (endpoints de la API REST ya documentados: `/api/generate`, `/api/chat`, `/api/tags`, `/api/pull`, `/api/create`, `/api/embed`, `/api/delete`).
+
 # Why it matters
 
 Estas dos tecnologías son el núcleo de la propuesta de valor de Hermes: IA de calidad ejecutándose 100% local, sustentando [[Privacy First]] y [[Local First]].
@@ -41,9 +43,12 @@ Ver [[ADR-004 - whisper.cpp para Reconocimiento de Voz]], [[ADR-005 - Ollama com
 # Related Notes
 
 - [[whisper.cpp - Repositorio Oficial]]
+- [[ggml - Repositorio Oficial]]
 - [[ADR-004 - whisper.cpp para Reconocimiento de Voz]]
 - [[ADR-005 - Ollama como Motor LLM]]
+- [[Ollama - Documentacion Oficial]]
 
 # References
 
 - .ai/KNOWLEDGE_BACKLOG.md (Priority 1)
+- docs/documentation_tech.yml (Priority 2, categorías `whispercpp`, `ggml`, `ollama`)

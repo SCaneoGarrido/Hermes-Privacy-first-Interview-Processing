@@ -18,6 +18,7 @@ Documentación oficial de SQLite, incluyendo la referencia del API en C (`c3ref`
 Fuentes oficiales:
 - https://sqlite.org/docs.html
 - https://sqlite.org/c3ref/intro.html (referencia del API en C, usada directamente desde C++ en Hermes)
+- https://sqlite.org/lang.html (referencia del lenguaje SQL soportado; verificado 2026-07-24: documenta `BEGIN TRANSACTION`, `COMMIT TRANSACTION`, `ROLLBACK TRANSACTION` y savepoints — fuente directa para la nota pendiente "SQLite Transactions")
 
 # Why it matters
 
@@ -43,3 +44,4 @@ Ver pendiente: nota atómica "SQLite Transactions" en [[07 Libraries]] (Knowledg
 
 - https://sqlite.org/docs.html (Priority 2)
 - https://sqlite.org/c3ref/intro.html (Priority 2)
+- https://sqlite.org/lang.html (Priority 2, docs/documentation_tech.yml)

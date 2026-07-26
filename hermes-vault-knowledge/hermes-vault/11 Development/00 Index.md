@@ -18,7 +18,13 @@ related: ["Hermes Coding Standard", "Compilar y Ejecutar el Backend con CMake"]
 - [[Hermes Coding Standard]] — nomenclatura, RAII, smart pointers, reglas estructurales.
 - [[Compilar y Ejecutar el Backend con CMake]] — flujo verificado de build/run con CMake + vcpkg en Windows/MinGW, y errores comunes de configuración.
 
-Pendiente de evaluar como futuras notas atómicas (no listadas aún en `.ai/KNOWLEDGE_BACKLOG.md`): Logging (spdlog), flujo de Pull Request / revisión de código.
+Pendiente de evaluar como futuras notas atómicas (no listadas aún en `.ai/KNOWLEDGE_BACKLOG.md`): Logging ([[spdlog - Repositorio Oficial|spdlog]]), flujo de Pull Request / revisión de código.
+
+**Herramientas de desarrollo con fuente oficial confirmada el 2026-07-24** (`docs/documentation_tech.yml`):
+- [[Git - Documentacion Oficial]] y [[GitHub Docs - Documentacion Oficial]] — control de versiones y alojamiento.
+- [[Visual Studio - Documentacion Oficial]], [[Visual Studio Code - Documentacion Oficial]] y [[MSVC y C++ en Microsoft Learn]] — IDEs y toolchain en Windows.
+- [[Markdown Guide - Referencia]] — formato de toda la documentación del proyecto.
+- [[Obsidian - Ayuda Oficial]] — la herramienta de esta misma bóveda.
 
 # Why it matters
 
@@ -40,7 +46,15 @@ Referencia obligatoria antes de escribir código en cualquier sprint del [[04 Ro
 
 - [[Hermes Coding Standard]]
 - [[Compilar y Ejecutar el Backend con CMake]]
+- [[Git - Documentacion Oficial]]
+- [[GitHub Docs - Documentacion Oficial]]
+- [[Visual Studio - Documentacion Oficial]]
+- [[Visual Studio Code - Documentacion Oficial]]
+- [[MSVC y C++ en Microsoft Learn]]
+- [[Markdown Guide - Referencia]]
+- [[Obsidian - Ayuda Oficial]]
 
 # References
 
 - .ai/CODING_STANDARD.md (Priority 1)
+- docs/documentation_tech.yml (Priority 2)

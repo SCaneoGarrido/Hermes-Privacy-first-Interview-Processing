@@ -21,11 +21,11 @@ Temas identificados en `.ai/KNOWLEDGE_BACKLOG.md`:
 - [ ] SQLite Transactions
 - [ ] React Query
 
-**No listadas en el backlog pero presentes en el stack** (.ai/PROJECT.md), pendientes de evaluar prioridad:
-- [ ] nlohmann/json (serialización)
-- [ ] spdlog (logging)
-- [ ] Catch2 (testing)
-- [ ] vcpkg (gestión de paquetes)
+**No listadas en el backlog pero presentes en el stack** (.ai/PROJECT.md), con fuente oficial ya confirmada el 2026-07-24 (`docs/documentation_tech.yml`), pendientes de nota atómica propia:
+- [ ] nlohmann/json (serialización) — ver [[nlohmann/json - Documentacion Oficial]]
+- [ ] spdlog (logging) — ver [[spdlog - Repositorio Oficial]] (depende de [[fmt - Documentacion Oficial]])
+- [ ] Catch2 (testing) — ver [[Catch2 - Repositorio Oficial]]
+- [ ] vcpkg (gestión de paquetes) — ver [[vcpkg - Documentacion Oficial]]
 
 # Why it matters
 
@@ -48,8 +48,14 @@ Ver [[Stack Tecnologico de Hermes]] para la tabla completa de tecnologías.
 - [[SQLite - Documentacion Oficial]]
 - [[React - Documentacion Oficial]]
 - [[Stack Tecnologico de Hermes]]
+- [[nlohmann/json - Documentacion Oficial]]
+- [[spdlog - Repositorio Oficial]]
+- [[fmt - Documentacion Oficial]]
+- [[Catch2 - Repositorio Oficial]]
+- [[vcpkg - Documentacion Oficial]]
 
 # References
 
 - .ai/KNOWLEDGE_BACKLOG.md (Priority 1)
 - .ai/PROJECT.md (Priority 1)
+- docs/documentation_tech.yml (Priority 2)
