@@ -4,17 +4,17 @@
     "type": "split",
     "children": [
       {
-        "id": "30788e806e319b79",
+        "id": "f0d7482cd97cfcb5",
         "type": "tabs",
         "children": [
           {
-            "id": "2a0d184c20f2a64a",
+            "id": "6cfa152f58953a43",
             "type": "leaf",
             "state": {
-              "type": "graph",
+              "type": "empty",
               "state": {},
-              "icon": "lucide-git-fork",
-              "title": "Graph view"
+              "icon": "lucide-file",
+              "title": "New tab"
             }
           }
         ]
@@ -179,8 +179,9 @@
       "bases:Create new base": false
     }
   },
-  "active": "f6fbe66245116dbe",
+  "active": "6cfa152f58953a43",
   "lastOpenFiles": [
+    "03 ADR/ADR-003 - Crow como Framework REST.md",
     "Welcome.md"
   ]
 }

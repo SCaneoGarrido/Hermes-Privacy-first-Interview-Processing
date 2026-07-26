@@ -43,7 +43,7 @@ bool saveFile(std::string& filename) {
         }
 
         std::filesystem::path file_path = storage_dir / (uuid + ".tmp");
-   
+        // Continuar con el guardado del archivo 
 
     } catch (const std::exception& e) {
         std::stringstream log_error_ss;
