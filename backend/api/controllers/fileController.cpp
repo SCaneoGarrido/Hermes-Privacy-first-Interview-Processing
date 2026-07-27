@@ -26,16 +26,17 @@ crow::response FileController::handleFileUpload(const crow::request& req) {
 
         crow::json::wvalue data;
         data["filename"] = filename;
+        data["code"] = "ACCEPTED";
         return ApiResponse::success(202, std::move(data));
 
     } catch (const std::exception& e) {
         // --- CONSTRUCCIÓN DEL LOG DE ERROR ---
         std::stringstream log_error_ss;
-        log_error_ss << "[ERROR] Fallo en handleFileUpload. Detalle: " << e.what();
+        log_error_ss << "[fileController][handleFileUpload] Fallo en handleFileUpload. Detalle: " << e.what();
 
         log_event(log_error_ss.str());
 
-        return ApiResponse::failure(500, "INTERNAL_SERVER_ERROR", "Error al subir el archivo: " + std::string(e.what()));
+        return ApiResponse::failure(500, "INTERNAL_SERVER_ERROR", "Error al subir el archivo");
     }
 }
 

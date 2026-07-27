@@ -22,8 +22,10 @@ add_executable(backend
                 main.cpp
                 api/controllers/fileController.cpp
                 api/controllers/healthController.cpp
+                api/controllers/interviewController.cpp
                 api/shared/utils/logger.cpp
                 api/helpers/fileController.helper.cpp
+                api/helpers/interviewController.helper.cpp
             )
 
 target_compile_features(backend PRIVATE cxx_std_20)

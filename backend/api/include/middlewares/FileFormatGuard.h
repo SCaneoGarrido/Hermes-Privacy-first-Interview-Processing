@@ -27,7 +27,7 @@ struct FileFormatGuard : crow::ILocalMiddleware {
             // VALIDACIÓN 1: ¿Existe el cuerpo del archivo?
             if (file_part.body.empty()) {
                 std::stringstream log_error_ss;
-                log_error_ss << "[Helpers][validateFileInformation] - 'file' not found in the request";
+                log_error_ss << "[middlewares][FileFormatGuard] - campo requerido 'file' no encontrado";
                 log_event(log_error_ss.str());
                 res = ApiResponse::failure(400, "BAD_REQUEST", "No existe informacion del archivo");
                 res.end();
@@ -54,7 +54,7 @@ struct FileFormatGuard : crow::ILocalMiddleware {
 
             if (!isValidFormat) {
                 std::stringstream log_error_ss;
-                log_error_ss << "[Helpers][validateFileInformation] - unsupported content type: '" << contentType << "'";
+                log_error_ss << "[middlewares][FileFormatGuard] - unsupported content type: '" << contentType << "'";
                 log_event(log_error_ss.str());
                 res = ApiResponse::failure(400, "UNSUPPORTED_MEDIA_TYPE", "Formato de archivo no permitido");
                 res.end();
