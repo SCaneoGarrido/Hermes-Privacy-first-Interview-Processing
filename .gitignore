@@ -74,3 +74,7 @@ Testing/
 /backend/working_bit.txt
 /backend/uploads
 .claude
+
+# Archivos de caché de IntelliSense y VS Code
+.vscode/VC.DB*
+.vscode/vc.db*
