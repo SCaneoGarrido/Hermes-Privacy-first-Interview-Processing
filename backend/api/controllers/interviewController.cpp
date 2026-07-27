@@ -4,6 +4,7 @@
 #include "../include/ApiResponse.h"
 #include "../include/logger.h"
 
+
 crow::response InterviewController::handleInterviewRegistration(const crow::request& req) {
     try {
         crow::json::rvalue body_json = crow::json::load(req.body);
@@ -14,7 +15,9 @@ crow::response InterviewController::handleInterviewRegistration(const crow::requ
             << "size: "         << type         << "  |  " << "\n"
             << "subject_type: " << subject_type << "  |  " << "\n";
         log_event(log_ss.str());
+        
 
+        // continuar con la logica de almacenado de datos en SQLITE
         crow::json::wvalue data;
         data["code"] = "CREATED";
         return ApiResponse::success(201, std::move(data));

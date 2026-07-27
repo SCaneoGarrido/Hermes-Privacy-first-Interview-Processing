@@ -1,6 +1,7 @@
 {
   "dependencies": [
     "crow",
-    "boost-uuid"
+    "boost-uuid",
+    "sqlite3"
   ]
 }

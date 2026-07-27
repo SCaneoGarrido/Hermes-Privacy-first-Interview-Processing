@@ -1,0 +1,23 @@
+{
+    "configurations": [
+        {
+            "name": "Win32",
+            "includePath": [
+                "${workspaceFolder}/**"
+            ],
+            "defines": [],
+            "compilerPath": "E:/Desarrollo/Tools/mingw64/bin/g++.exe",
+            "cStandard": "c20",
+            "cppStandard": "c++20",
+            "intelliSenseMode": "windows-gcc-x64",
+            "browse": {
+                "path": [
+                    "${workspaceFolder}"
+                ],
+                "limitSymbolsToIncludedHeaders": true,
+                "databaseFilename": "${workspaceFolder}/.vscode/vc.db"
+            }
+        }
+    ],
+    "version": 4
+}
