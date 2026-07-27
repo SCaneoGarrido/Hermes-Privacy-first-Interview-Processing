@@ -18,8 +18,11 @@ crow::response FileController::handleFileUpload(const crow::request& req) {
            return ApiResponse::failure(400, "INVALID_FILE", "Error en la solicitud");
         }
 
-        // Continuas con la lógica para guardar el std::ofstream...
-        // std::ofstream ...
+        std::string ext = getFileExtension(filename);
+        bool fileSaved = saveFile(file_content, ext);
+        if (!fileSaved) {
+            return ApiResponse::failure(500, "INTERNAL_SERVER_ERROR", "Error interno del servidor");
+        }
 
         crow::json::wvalue data;
         data["filename"] = filename;

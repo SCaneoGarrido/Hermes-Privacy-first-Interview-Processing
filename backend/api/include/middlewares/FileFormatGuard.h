@@ -2,9 +2,11 @@
 #define FILE_FORMAT_GUARD_H
 
 #include "crow.h"
-#include "ApiResponse.h"
-#include "Constanst.h"
-#include "logger.h"
+#include "../ApiResponse.h"
+#include "../Constanst.h"
+#include "../logger.h"
+#include <algorithm>
+#include <cctype>
 #include <vector>
 #include <string>
 
@@ -21,7 +23,7 @@ struct FileFormatGuard : crow::ILocalMiddleware {
             // el formato real a validar es el de la parte "file" dentro del multipart.
             crow::multipart::message file_form(req);
             auto file_part = file_form.get_part_by_name("file");
-            auto contentType = file_part.get_header_object("Content-Type").value;
+
             // VALIDACIÓN 1: ¿Existe el cuerpo del archivo?
             if (file_part.body.empty()) {
                 std::stringstream log_error_ss;
@@ -32,16 +34,16 @@ struct FileFormatGuard : crow::ILocalMiddleware {
                 return;
             }
 
-            // VALIDACIÓN 2: ¿Tiene parámetros el header?
-            if (contentType.params.empty()) {
-                std::stringstream log_error_ss;
-                log_error_ss << "[Helpers][validateFileInformation] - the request has empty params";
-                log_event(log_error_ss.str());
-                res = ApiResponse::failure(400, "BAD_REQUEST", "Headers sin parametros");
-                res.end();
-                return;
-            }
+            // Normalizamos el Content-Type (minusculas, sin espacios) para no depender
+            // de que el cliente lo envie en un formato exacto (p.ej. "Audio/WAV " o "audio/wav ; codecs=1").
+            std::string contentType = file_part.get_header_object("Content-Type").value;
+            contentType.erase(std::remove_if(contentType.begin(), contentType.end(),
+                                              [](unsigned char c) { return std::isspace(c); }),
+                               contentType.end());
+            std::transform(contentType.begin(), contentType.end(), contentType.begin(),
+                            [](unsigned char c) { return std::tolower(c); });
 
+            // VALIDACIÓN 2: ¿El formato del archivo esta permitido?
             bool isValidFormat = false;
             for (const auto& formato : Config::FORMATOS_AUDIO_PERMITIDOS) {
                 if (contentType == formato) {
@@ -51,6 +53,9 @@ struct FileFormatGuard : crow::ILocalMiddleware {
             }
 
             if (!isValidFormat) {
+                std::stringstream log_error_ss;
+                log_error_ss << "[Helpers][validateFileInformation] - unsupported content type: '" << contentType << "'";
+                log_event(log_error_ss.str());
                 res = ApiResponse::failure(400, "UNSUPPORTED_MEDIA_TYPE", "Formato de archivo no permitido");
                 res.end();
                 return;

@@ -1,6 +1,6 @@
 #include "crow.h"
 #include "api/include/FileController.h"
-#include "api/include/FileFormatGuard.h"
+#include "api/include/middlewares/FileFormatGuard.h"
 #include "api/include/Health.h"
 
 int main()

@@ -2,7 +2,9 @@
 #include "../include/FileControllerHelper.h"
 #include "../include/logger.h"
 #include "../include/Constanst.h"
+#include <iostream>
 #include <fstream>
+#include <string>
 #include <filesystem>
 #include <boost/uuid/uuid.hpp> // MAIN UUID CLASS
 #include <boost/uuid/uuid_generators.hpp> // GENERATORS
@@ -33,7 +35,12 @@ std::string generateUUID() {
     return uuid_str;
 }
 
-bool saveFile(std::string& filename) {
+std::string getFileExtension(const std::string& filename) {
+    std::filesystem::path file(filename);
+    return file.extension().string();
+}
+
+bool saveFile(std::string& file_content, std::string& ext) {
     try {
         std::string uuid = generateUUID(); 
         // Dynamic path 
@@ -42,9 +49,21 @@ bool saveFile(std::string& filename) {
             std::filesystem::create_directory(storage_dir);
         }
 
-        std::filesystem::path file_path = storage_dir / (uuid + ".tmp");
+        std::filesystem::path file_path = storage_dir / (uuid + ext);
         // Continuar con el guardado del archivo 
 
+        std::ofstream file(file_path, std::ios::binary);
+        if (!file.is_open()) {
+            std::stringstream log_error_ss;
+            log_error_ss << "[Helpers][validateFileInformation] - Error cannot create file." << "\n"
+                << "Details: \n" << "Path: " << file_path << std::endl;
+            log_event(log_error_ss.str());    
+            return false;
+        }
+
+        file.write(file_content.data(), file_content.size());
+        file.close();
+        return true;
     } catch (const std::exception& e) {
         std::stringstream log_error_ss;
         log_error_ss << "[Helpers][validateFileInformation] - Error while saving file. Details:  " << e.what();
