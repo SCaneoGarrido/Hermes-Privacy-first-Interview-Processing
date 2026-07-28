@@ -3,7 +3,8 @@
 #include "../include/InterviewControllerHelper.h"
 #include "../include/ApiResponse.h"
 #include "../include/logger.h"
-
+#include "../include/DatabaseManager.h"
+#include <vector>
 
 crow::response InterviewController::handleInterviewRegistration(const crow::request& req) {
     try {
@@ -17,10 +18,23 @@ crow::response InterviewController::handleInterviewRegistration(const crow::requ
         log_event(log_ss.str());
         
 
-        // continuar con la logica de almacenado de datos en SQLITE
-        crow::json::wvalue data;
-        data["code"] = "CREATED";
-        return ApiResponse::success(201, std::move(data));
+        // continuar con la logica de almacenado de datos en MySql
+        std::string query = "INSERT INTO interviews (interview_date, interview_type, interview_subject_type, created_at, updated_at) VALUES (?, ?, ?, NOW(), NOW())";
+        std::vector<SqlParam> params = {date, type, subject_type};
+        
+        auto& db = DatabaseManager::getInstance();
+
+        if (db.executePrepared(query, params)) {
+            crow::json::wvalue data;
+            data["code"] = "CREATED";
+            return ApiResponse::success(201, std::move(data));
+        }
+
+        std::stringstream log_error_ss;
+        log_error_ss << "[interviewController][handleInterviewRegistration] Fallo en handleInterviewRegistration. Error al almacenar la informacion de entrevista";
+        log_event(log_error_ss.str());
+        return ApiResponse::failure(500, "INTERNAL_SERVER_ERROR", "Error registrando entrevista");
+        
     } catch (std::exception& e) {
         std::stringstream log_error_ss;
         log_error_ss << "[interviewController][handleInterviewRegistration] Fallo en handleInterviewRegistration. Detalle: " << e.what();

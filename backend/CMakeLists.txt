@@ -18,12 +18,15 @@ endif()
 project(backend)
 
 find_package(Crow CONFIG REQUIRED)
+find_package(unofficial-libmariadb CONFIG REQUIRED)
+
 add_executable(backend
                 main.cpp
                 api/controllers/fileController.cpp
                 api/controllers/healthController.cpp
                 api/controllers/interviewController.cpp
                 api/shared/utils/logger.cpp
+                api/shared/database/DatabaseManager.cpp
                 api/helpers/fileController.helper.cpp
                 api/helpers/interviewController.helper.cpp
             )
@@ -31,7 +34,7 @@ add_executable(backend
 target_compile_features(backend PRIVATE cxx_std_20)
 set_target_properties(backend PROPERTIES CMAKE_CXX_EXTENSIONS OFF)
 
-target_link_libraries(backend PRIVATE Crow::Crow)
+target_link_libraries(backend PRIVATE Crow::Crow unofficial::libmariadb)
 
 if(WIN32)
     # Asio (usado por Crow) necesita las librerias de sockets de Windows;

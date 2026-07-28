@@ -6,7 +6,7 @@
 
 class FileController {
 public:
-    crow::response handleFileUpload(const crow::request& req);
+    crow::response handleFileUpload(const crow::request& req, int& interview_id);
     crow::response getFileInfo(const std::string& file_id);
 };
 

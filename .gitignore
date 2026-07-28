@@ -78,3 +78,6 @@ Testing/
 # Archivos de caché de IntelliSense y VS Code
 .vscode/VC.DB*
 .vscode/vc.db*
+
+# Variables de entorno locales (credenciales de BD, etc.)
+.env

@@ -50,12 +50,18 @@ sources:
       - https://crowcpp.org/master/reference/
       - https://github.com/CrowCpp/Crow
 
-  sqlite:
-    name: SQLite
+  mariadb:
+    name: MariaDB Connector/C (libmariadb)
     official:
-      - https://sqlite.org/docs.html
-      - https://sqlite.org/c3ref/funclist.html
-      - https://sqlite.org/lang.html
+      - https://mariadb.com/docs/server/connect/programming-languages/c/
+      - https://mariadb.com/kb/en/mariadb-connector-c/
+      - https://github.com/mariadb-corporation/mariadb-connector-c
+
+  mysql:
+    name: MySQL Server
+    official:
+      - https://dev.mysql.com/doc/refman/en/
+      - https://hub.docker.com/_/mysql
 
   ollama:
     name: Ollama

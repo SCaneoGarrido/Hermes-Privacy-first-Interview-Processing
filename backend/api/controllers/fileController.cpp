@@ -3,29 +3,40 @@
 #include "../include/ApiResponse.h"
 #include "../include/logger.h"
 #include "../include/FileControllerHelper.h"
+#include "../include/DatabaseManager.h"
 #include <string>
 #include <sstream>
 #include <iostream>
+#include <vector>
 
-
-crow::response FileController::handleFileUpload(const crow::request& req) {
+crow::response FileController::handleFileUpload(const crow::request& req, int& interview_id) {
     try {
         // Analizo el contenido multipart de la solicitud para extraer el archivo
         crow::multipart::message file_form(req);
 
-        auto [filename, file_content] = validateFileInformation(file_form);
+        auto [filename, file_content, bytes_size] = validateFileInformation(file_form);
         if (filename.empty() || file_content.empty()) {
            return ApiResponse::failure(400, "INVALID_FILE", "Error en la solicitud");
         }
 
         std::string ext = getFileExtension(filename);
-        bool fileSaved = saveFile(file_content, ext);
+        auto [fileSaved, savedPath] = saveFile(file_content, ext);
         if (!fileSaved) {
+            return ApiResponse::failure(500, "INTERNAL_SERVER_ERROR", "Error interno del servidor");
+        }
+
+        std::string query = "INSERT INTO interviews_audio (interview_audio_path, interview_audio_format, interview_audio_size, interview_id, created_at) VALUES (?, ?, ?, ?, NOW())";
+        std::vector<SqlParam> params = {savedPath, ext, bytes_size, interview_id};
+
+        auto& db = DatabaseManager::getInstance();
+        if (!db.executePrepared(query, params)) {
+            log_event("[fileController][handleFileUpload] Fallo al registrar el audio en la BD");
             return ApiResponse::failure(500, "INTERNAL_SERVER_ERROR", "Error interno del servidor");
         }
 
         crow::json::wvalue data;
         data["filename"] = filename;
+        data["path"] = savedPath;
         data["code"] = "ACCEPTED";
         return ApiResponse::success(202, std::move(data));
 

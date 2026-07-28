@@ -1,0 +1,26 @@
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: hermes-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE}
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+    ports:
+      # Bind solo a loopback: la BD no debe quedar expuesta en la red local.
+      - "127.0.0.1:${MYSQL_PORT}:3306"
+    volumes:
+      - hermes-mysql-data:/var/lib/mysql
+      # Scripts en SQL/ se ejecutan automaticamente, en orden alfabetico,
+      # SOLO la primera vez que el volumen de datos esta vacio.
+      - ./SQL:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_ROOT_PASSWORD}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  hermes-mysql-data:

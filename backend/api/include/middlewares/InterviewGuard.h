@@ -24,7 +24,7 @@ struct InterviewGuard : crow::ILocalMiddleware {
                 std::stringstream log_error_ss;
                 log_error_ss << "[middlewares][InterviewGuard] Faltan campos requeridos 'date', 'type', 'subject_type";
                 log_event(log_error_ss.str());
-                res = ApiResponse::failure(400, "BAD_REQUEST", "");  
+                res = ApiResponse::failure(400, "BAD_REQUEST", "Faltan campos requeridos: date, type, subject_type");
                 res.end();
                 return;
             }
