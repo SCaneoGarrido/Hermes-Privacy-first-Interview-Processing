@@ -14,7 +14,6 @@ Desarrollar una plataforma local que permita a investigadores procesar entrevist
 
 ## Objetivos secundarios
 
-- Aprender y aplicar C++ moderno.
 - Diseñar una arquitectura mantenible y escalable.
 - Crear un proyecto open source reutilizable.
 - Permitir que futuros estudiantes puedan instalar Hermes sin conocimientos avanzados de programación.
