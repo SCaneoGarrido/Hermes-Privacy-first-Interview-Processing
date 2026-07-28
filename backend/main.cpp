@@ -35,7 +35,7 @@ int main()
         DatabaseManager::initializeGlobal(
             env_or("MYSQL_HOST", "127.0.0.1"),
             env_or("MYSQL_USER", "hermes_app"),
-            env_or("MYSQL_PASSWORD", "hermes_dev@123"),
+            env_or("MYSQL_PASSWORD", ""),
             env_or("MYSQL_DATABASE", "hermes"),
             std::stoi(env_or("MYSQL_PORT", "3306")));
         DatabaseManager::getInstance().migrateTables("../SQL/init.sql");
