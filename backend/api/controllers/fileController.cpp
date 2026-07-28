@@ -3,11 +3,12 @@
 #include "../include/ApiResponse.h"
 #include "../include/logger.h"
 #include "../include/FileControllerHelper.h"
-#include "../include/DatabaseManager.h"
 #include <string>
 #include <sstream>
 #include <iostream>
 #include <vector>
+
+FileController::FileController(InterviewService& service) : m_service(service) {}
 
 crow::response FileController::handleFileUpload(const crow::request& req, int& interview_id) {
     try {
@@ -25,20 +26,8 @@ crow::response FileController::handleFileUpload(const crow::request& req, int& i
             return ApiResponse::failure(500, "INTERNAL_SERVER_ERROR", "Error interno del servidor");
         }
 
-        std::string query = "INSERT INTO interviews_audio (interview_audio_path, interview_audio_format, interview_audio_size, interview_id, created_at) VALUES (?, ?, ?, ?, NOW())";
-        std::vector<SqlParam> params = {savedPath, ext, bytes_size, interview_id};
-
-        auto& db = DatabaseManager::getInstance();
-        if (!db.executePrepared(query, params)) {
-            log_event("[fileController][handleFileUpload] Fallo al registrar el audio en la BD");
+        if (!m_service.attachAudio(interview_id, savedPath, ext, bytes_size)) {
             return ApiResponse::failure(500, "INTERNAL_SERVER_ERROR", "Error interno del servidor");
-        }
-
-        // La entrevista ya tiene audio: pasa de "pending_audio" a "pending_processing".
-        // No aborta el request si esto falla (el audio ya quedo guardado); solo se loggea.
-        std::vector<SqlParam> statusParams = {interview_id};
-        if (!db.executePrepared("UPDATE interviews SET status = 'pending_processing' WHERE id = ?", statusParams)) {
-            log_event("[fileController][handleFileUpload] Fallo actualizando el status de la entrevista a pending_processing");
         }
 
         crow::json::wvalue data;

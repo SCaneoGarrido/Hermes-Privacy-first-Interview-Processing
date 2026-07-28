@@ -90,6 +90,22 @@ a {
   font-size: 0.9rem;
 }
 
+.button-link-danger {
+  background: none;
+  border: none;
+  padding: 0;
+  width: auto;
+  color: var(--danger);
+  font-size: 0.9rem;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.button-link-danger:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
 .muted {
   color: var(--text-muted);
 }

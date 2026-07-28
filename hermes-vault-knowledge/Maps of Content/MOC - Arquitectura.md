@@ -32,9 +32,10 @@ Mapa de contenido de las secciones [[02 Architecture]] y [[03 ADR]]: la arquitec
 - [[ADR-009 - libmariadb como Cliente MySQL]]
 - [[ADR-010 - Docker Compose para MySQL Local]]
 - [[ADR-011 - Contrato de Respuesta API Uniforme]]
+- [[ADR-012 - Repository y Service Layer para Entrevistas]]
 
 **Patrones relacionados**
-- [[Filosofia de Repositorios]] (01 Project) — **desviación conocida (2026-07-28)**: los controllers acceden a `DatabaseManager` directamente, sin repositorio intermedio (ver [[Sprint 2 - Persistence]])
+- [[Filosofia de Repositorios]] (01 Project) — cumplida desde [[ADR-012 - Repository y Service Layer para Entrevistas]] (2026-07-28): los controllers ya no acceden a `DatabaseManager` directamente
 - [[09 Patterns]]: [[Contrato de Respuesta API Uniforme]] (disponible); Dependency Injection, Repository Pattern, DTO Pattern (pendientes)
 
 # Why it matters

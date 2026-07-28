@@ -25,8 +25,10 @@ add_executable(backend
                 api/controllers/fileController.cpp
                 api/controllers/healthController.cpp
                 api/controllers/interviewController.cpp
+                api/services/InterviewService.cpp
                 api/shared/utils/logger.cpp
                 api/shared/database/DatabaseManager.cpp
+                api/shared/database/MySqlInterviewRepository.cpp
                 api/helpers/fileController.helper.cpp
                 api/helpers/interviewController.helper.cpp
             )

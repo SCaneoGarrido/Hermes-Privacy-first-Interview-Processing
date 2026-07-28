@@ -153,3 +153,17 @@ Every HTTP response (success, validation failure, 404, 405, and unhandled except
 Reason
 
 Gives the frontend a single, predictable shape to parse regardless of endpoint or failure mode, instead of ad-hoc error bodies per route. Enforced via `ApiResponse` helper, `CROW_CATCHALL_ROUTE` (404/405), and `app.exception_handler` (uncaught exceptions). See backend/api/rules/contract.md.
+
+---
+
+## ADR-012
+
+Repository & Service Layer for Interviews
+
+Decision
+
+Introduce `IInterviewRepository` (implemented by `MySqlInterviewRepository`) and a thin `InterviewService` between the controllers and the database. `InterviewController` and `FileController` now depend only on `InterviewService`; neither calls `DatabaseManager` directly.
+
+Reason
+
+Closes the deviation from the Repository Philosophy accepted during Sprint 2 ("move fast on the create -> upload -> process flow first, add the interface later") before Sprint 4 (Background Processing) introduces worker threads and more call sites -- retrofitting the abstraction later, with more code touching the database, would have been more expensive. `InterviewService` has no dependency on Crow or MySQL, keeping business rules (e.g. audio required before processing, deleting the on-disk audio file when an interview is removed) out of both the controller and the repository.

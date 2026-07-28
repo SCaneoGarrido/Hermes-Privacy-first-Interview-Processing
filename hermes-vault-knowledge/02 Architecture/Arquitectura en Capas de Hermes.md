@@ -43,7 +43,7 @@ Esta dirección estricta de dependencias es lo que hace posible la regla de [[Cl
 # Common Mistakes
 
 - Colocar validaciones de negocio en los controllers de la capa REST API (.ai/AI_INSTRUCTIONS.md: "Never introduce business logic inside controllers").
-- Acceder a la base de datos directamente desde un controller, saltándose `Application` y `Domain`. **Este error está presente hoy en el código real** (`InterviewController`/`FileController` llaman a `DatabaseManager` directamente, sin capa `Application`/`Domain` ni repositorio intermedio) — ver [[Sprint 2 - Persistence]] para el detalle de esta deuda técnica.
+- Acceder a la base de datos directamente desde un controller, saltándose `Application` y `Domain`. **Corregido (2026-07-28)**: `InterviewController`/`FileController` dependen de `InterviewService` (capa `Application`), que a su vez depende de `IInterviewRepository` — ver [[ADR-012 - Repository y Service Layer para Entrevistas]] y [[Sprint 2 - Persistence]].
 
 # Hermes Usage
 

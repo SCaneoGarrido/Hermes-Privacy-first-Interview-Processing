@@ -67,4 +67,6 @@ export const apiClient = {
   // FormData: no fijar Content-Type a mano, el navegador arma el boundary del multipart.
   postForm: <T>(path: string, form: FormData, extraHeaders?: Record<string, string>) =>
     request<T>(path, { method: "POST", body: form, headers: extraHeaders }),
+
+  del: <T>(path: string) => request<T>(path, { method: "DELETE" }),
 };

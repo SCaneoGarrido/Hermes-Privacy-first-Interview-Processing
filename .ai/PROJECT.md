@@ -148,10 +148,10 @@ Repositories should hide MySQL.
 
 Controllers should never contain business logic.
 
-Known deviation (2026-07-28): controllers currently call `DatabaseManager`
-directly (no `IInterviewRepository`-style interface exists yet). Tracked as
-technical debt, not a change of principle -- see the Hermes vault note for
-Sprint 2 - Persistence.
+`InterviewController` and `FileController` depend on `InterviewService`,
+which depends on `IInterviewRepository` (implemented by
+`MySqlInterviewRepository`). Neither controller touches `DatabaseManager`
+directly (resolved 2026-07-28 -- see ADR-012 in `.ai/DECISIONS.md`).
 
 ---
 

@@ -2,23 +2,21 @@ import { apiClient } from "./client";
 import type {
   CreateInterviewPayload,
   CreateInterviewResponse,
+  DeleteInterviewResponse,
   Interview,
   InterviewDetail,
   ProcessInterviewResponse,
   UploadAudioResponse,
 } from "./types";
 
-// GET /interviews -- todavia no existe en el backend (ver docs/API_REQUIREMENTS.md #2).
 export function listInterviews() {
   return apiClient.get<Interview[]>("/interviews");
 }
 
-// GET /interview/:id -- todavia no existe en el backend (ver docs/API_REQUIREMENTS.md #2).
 export function getInterview(id: number) {
   return apiClient.get<InterviewDetail>(`/interview/${id}`);
 }
 
-// POST /interview -- existe, pero hoy no devuelve "id" (ver docs/API_REQUIREMENTS.md #1).
 export function createInterview(payload: CreateInterviewPayload) {
   return apiClient.post<CreateInterviewResponse>("/interview", payload);
 }
@@ -32,7 +30,10 @@ export function uploadAudio(interviewId: number, file: File) {
   });
 }
 
-// POST /interview/:id/process -- todavia no existe en el backend (ver docs/API_REQUIREMENTS.md #2).
 export function processInterview(id: number) {
   return apiClient.post<ProcessInterviewResponse>(`/interview/${id}/process`);
+}
+
+export function deleteInterview(id: number) {
+  return apiClient.del<DeleteInterviewResponse>(`/interview/${id}`);
 }

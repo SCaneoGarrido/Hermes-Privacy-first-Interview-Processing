@@ -4,7 +4,7 @@ aliases: ["Hermes Roadmap"]
 tags: [roadmap, hermes]
 status: draft
 created: 2026-07-24
-updated: 2026-07-24
+updated: 2026-07-28
 source: README.md
 related: ["Hermes - Vision General"]
 ---
@@ -32,6 +32,26 @@ Secuencia de sprints:
 11. [[Sprint 10 - Testing]]
 12. [[Sprint 11 - Documentation]]
 13. [[Sprint 12 - Release]]
+
+# Status (2026-07-28)
+
+| # | Sprint | Estado | Nota |
+|---|--------|--------|------|
+| 0 | [[Sprint 0 - Foundation]] | ✅ done | Entorno, CMake/vcpkg, Crow, MySQL, logging, `/health` |
+| 1 | [[Sprint 1 - Core API]] | 🟡 draft | Controllers existen; sin capa Services formal ni versionado `/api/v1` |
+| 2 | [[Sprint 2 - Persistence]] | ✅ done | CRUD completo (incl. `DELETE`) + `IInterviewRepository`/`InterviewService` ([[ADR-012 - Repository y Service Layer para Entrevistas]]) |
+| 3 | [[Sprint 3 - File Upload]] | 🟠 in-progress | Upload + validación de firma de bytes; falta progreso de subida (depende de Sprint 4) |
+| 4 | [[Sprint 4 - Background Processing]] | ⚪ draft | No iniciado — sin cola de trabajos ni worker threads |
+| 5 | [[Sprint 5 - Whisper Integration]] | ⚪ draft | No iniciado — `transcriptionController.h` es solo esqueleto |
+| 6 | [[Sprint 6 - Ollama Integration]] | ⚪ draft | No iniciado |
+| 7 | [[Sprint 7 - Export]] | ⚪ draft | No iniciado |
+| 8 | [[Sprint 8 - Frontend]] | 🟠 in-progress | Adelantado fuera de orden; falta progreso real, descargas y configuración |
+| 9 | [[Sprint 9 - Configuration]] | ⚪ draft | No iniciado |
+| 10 | [[Sprint 10 - Testing]] | ⚪ draft | No iniciado — sin tests Catch2, solo un test manual de conexión |
+| 11 | [[Sprint 11 - Documentation]] | 🟡 draft | Subestimado: `.ai/`, esta bóveda y `docs/API_REQUIREMENTS.md` ya existen; falta guía de instalación formal |
+| 12 | [[Sprint 12 - Release]] | ⚪ draft | No iniciado |
+
+Bloqueador clave: [[Sprint 4 - Background Processing]] abre el camino a 5, 6 y 7 (el pipeline de IA local, el corazón del producto).
 
 # Why it matters
 

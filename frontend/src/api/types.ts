@@ -52,3 +52,8 @@ export interface ProcessInterviewResponse {
   id: number;
   status: InterviewStatus;
 }
+
+export interface DeleteInterviewResponse {
+  id: number;
+  code: string;
+}

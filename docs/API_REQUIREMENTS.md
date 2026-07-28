@@ -34,8 +34,10 @@ Crea una entrevista. Body:
 { "date": "2026-07-28 10:00:00", "type": "tecnica", "subject_type": "candidato" }
 ```
 Responde `data: { "code": "CREATED", "id": 7 }`. `InterviewController::handleInterviewRegistration`
-usa `DatabaseManager::executePrepared(..., /*return_id=*/true)`, que internamente
-llama a `mysql_stmt_insert_id`.
+delega en `InterviewService::createInterview`, que usa
+`IInterviewRepository::create` (`MySqlInterviewRepository` internamente
+llama a `DatabaseManager::executePrepared(..., /*return_id=*/true)` →
+`mysql_stmt_insert_id`). Ver ADR-012 en `.ai/DECISIONS.md`.
 
 ### `POST /upload`
 Sube un audio y lo asocia a una entrevista. Requiere:
@@ -108,6 +110,22 @@ integración. `TranscriptionController` (esqueleto en
 implementación ni ruta registrada — es de ahí, no de `InterviewController`,
 de donde debería salir la transcripción real cuando se construya.
 
+### `DELETE /interview/:id`
+`InterviewController::deleteInterview`, vía `InterviewService::removeInterview`:
+1. `404 NOT_FOUND` si el id no existe.
+2. Si existe, borra la fila de `interviews`. `interviews_audio` e
+   `interview_results` se eliminan solos por `ON DELETE CASCADE`
+   (`SQL/init.sql`).
+3. Si la entrevista tenía audio asociado, además borra el archivo físico en
+   `./uploads` (best-effort — si falla, solo se loguea, no aborta la
+   respuesta). Necesario por Privacy First: sin este paso, "eliminar" una
+   entrevista dejaría el audio real huérfano en disco.
+4. Responde `200` con `data: { "id": 7, "code": "DELETED" }`.
+
+```json
+{ "success": true, "data": { "id": 7, "code": "DELETED" }, "error": null }
+```
+
 ---
 
 ## 2. Columna `status`
@@ -167,9 +185,12 @@ sin implementar, no bloquea nada en desarrollo**):
 | 5 | Columna `status` en `interviews` | ✅ (retroactivo vía migración idempotente) |
 | 6 | `transcriptionController.h` compila | ✅ (sin implementación ni ruta — Sprint 5) |
 | 7 | CORS | pendiente, solo si se despliega fuera del proxy de Vite |
+| 8 | `DELETE /interview/:id` | ✅ (borra fila + cascada + archivo de audio en disco) |
+| 9 | Controllers sin acceso directo a `DatabaseManager` | ✅ (`IInterviewRepository` + `InterviewService`, ADR-012) |
 
 El flujo completo — crear entrevista, ver el id, subir audio, ver el detalle
-con el audio asociado, disparar "procesar" y ver el estado cambiar — funciona
-de punta a punta contra el backend real. Lo que falta para "terminar" el
-producto es la transcripción real (Whisper) y sus estados `completed`/`failed`,
-que son trabajo de otro sprint, no de la API en sí.
+con el audio asociado, disparar "procesar", eliminarla y ver el estado
+cambiar — funciona de punta a punta contra el backend real. Lo que falta
+para "terminar" el producto es la transcripción real (Whisper) y sus
+estados `completed`/`failed`, que son trabajo de otro sprint, no de la API
+en sí.

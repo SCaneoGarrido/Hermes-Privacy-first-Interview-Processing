@@ -6,7 +6,7 @@ status: accepted
 created: 2026-07-28
 updated: 2026-07-28
 source: .ai/DECISIONS.md
-related: ["ADR-006 - SQLite como Base de Datos", "ADR-009 - libmariadb como Cliente MySQL", "ADR-010 - Docker Compose para MySQL Local", "Stack Tecnologico de Hermes", "Local First"]
+related: ["ADR-006 - SQLite como Base de Datos", "ADR-009 - libmariadb como Cliente MySQL", "ADR-010 - Docker Compose para MySQL Local", "ADR-012 - Repository y Service Layer para Entrevistas", "Stack Tecnologico de Hermes", "Local First"]
 ---
 
 # Context
@@ -26,7 +26,7 @@ Usar **MySQL**, corriendo en Docker (ver [[ADR-010 - Docker Compose para MySQL L
 
 - Deja de cumplirse el motivo original de [[ADR-006 - SQLite como Base de Datos]] ("no requiere proceso de servidor independiente"): MySQL sí requiere un servidor, corriendo en Docker.
 - **Tensión con el alcance declarado**: README.md lista "Docker obligatorio" bajo "Fuera del alcance (v1.0)", pero en la práctica Docker es hoy un requisito real para levantar la base de datos local — no existe una ruta de instalación nativa documentada. Esto queda registrado como una tensión abierta entre esta ADR y el alcance de v1.0, no resuelta unilateralmente por esta nota.
-- El acceso a MySQL debe seguir quedando oculto detrás de repositorios según [[Filosofia de Repositorios]]. **Desviación conocida (2026-07-28)**: hoy `InterviewController` y `FileController` llaman directamente a `DatabaseManager::getInstance()`, sin una interfaz de repositorio intermedia — ver [[Sprint 2 - Persistence]] para el detalle de esta deuda técnica.
+- El acceso a MySQL debe quedar oculto detrás de repositorios según [[Filosofia de Repositorios]]. Cumplido desde [[ADR-012 - Repository y Service Layer para Entrevistas]] (2026-07-28): `InterviewController` y `FileController` ya no llaman a `DatabaseManager::getInstance()`, pasan por `IInterviewRepository`/`MySqlInterviewRepository`.
 - Habilita [[ADR-009 - libmariadb como Cliente MySQL]] (qué librería cliente C++ usar) y [[ADR-011 - Contrato de Respuesta API Uniforme]] (cómo se exponen los resultados vía REST).
 
 # Status

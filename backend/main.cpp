@@ -5,6 +5,8 @@
 #include "api/include/middlewares/InterviewGuard.h"
 #include "api/include/middlewares/HeaderIdGuard.h"
 #include "api/include/DatabaseManager.h"
+#include "api/include/repositories/MySqlInterviewRepository.h"
+#include "api/include/services/InterviewService.h"
 #include "api/include/Health.h"
 #include "api/include/logger.h"
 #include "api/include/ApiResponse.h"
@@ -27,15 +29,13 @@ std::string env_or(const char* name, const std::string& fallback) {
 int main()
 {
     crow::App<FileFormatGuard, InterviewGuard, HeaderIdGuard>  app;
-    FileController              fileController;
-    InterviewController         interviewController;
     Health                      health;
     try {
         // Inicializas una sola vez al arrancar el backend
         DatabaseManager::initializeGlobal(
             env_or("MYSQL_HOST", "127.0.0.1"),
             env_or("MYSQL_USER", "hermes_app"),
-            env_or("MYSQL_PASSWORD", ""),
+            env_or("MYSQL_PASSWORD", "hermes_dev@123"),
             env_or("MYSQL_DATABASE", "hermes"),
             std::stoi(env_or("MYSQL_PORT", "3306")));
         DatabaseManager::getInstance().migrateTables("../SQL/init.sql");
@@ -45,6 +45,15 @@ int main()
         std::cerr << "[CRITICAL ERROR] " << e.what() << std::endl;
         return 1;
     }
+
+    // Composition root: controllers dependen solo de InterviewService, que a
+    // su vez depende solo de IInterviewRepository (ver .ai/PROJECT.md,
+    // Filosofia de Repositorios). DatabaseManager queda aislado dentro de
+    // MySqlInterviewRepository.
+    MySqlInterviewRepository    interviewRepository(DatabaseManager::getInstance());
+    InterviewService             interviewService(interviewRepository);
+    FileController               fileController(interviewService);
+    InterviewController          interviewController(interviewService);
     // ==== Define route for service health check
     CROW_ROUTE(app, "/health")([&health](const crow::request& req) {
         return health.healthCheck(req);
@@ -71,6 +80,10 @@ int main()
 
     CROW_ROUTE(app, "/interview/<int>").methods(crow::HTTPMethod::GET)([&interviewController](int id) {
         return interviewController.getInterview(id);
+    });
+
+    CROW_ROUTE(app, "/interview/<int>").methods(crow::HTTPMethod::Delete)([&interviewController](int id) {
+        return interviewController.deleteInterview(id);
     });
 
     CROW_ROUTE(app, "/interview/<int>/process").methods(crow::HTTPMethod::POST)([&interviewController](int id) {

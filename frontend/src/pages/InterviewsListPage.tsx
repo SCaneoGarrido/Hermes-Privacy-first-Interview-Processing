@@ -1,6 +1,6 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { listInterviews } from "../api/interviews";
+import { deleteInterview, listInterviews } from "../api/interviews";
 import type { Interview } from "../api/types";
 import { ErrorBanner } from "../components/ErrorBanner";
 import { StatusBadge } from "../components/StatusBadge";
@@ -8,20 +8,35 @@ import { StatusBadge } from "../components/StatusBadge";
 export function InterviewsListPage() {
   const [interviews, setInterviews] = useState<Interview[] | null>(null);
   const [error, setError] = useState<unknown>(null);
+  const [deletingId, setDeletingId] = useState<number | null>(null);
+
+  const loadInterviews = useCallback(() => {
+    return listInterviews()
+      .then((data) => setInterviews(data))
+      .catch((err) => setError(err));
+  }, []);
 
   useEffect(() => {
-    let cancelled = false;
-    listInterviews()
-      .then((data) => {
-        if (!cancelled) setInterviews(data);
-      })
-      .catch((err) => {
-        if (!cancelled) setError(err);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+    loadInterviews();
+  }, [loadInterviews]);
+
+  async function handleDelete(interview: Interview) {
+    const confirmed = window.confirm(
+      `¿Eliminar la entrevista #${interview.id} (${interview.date})? Esta acción no se puede deshacer.`
+    );
+    if (!confirmed) return;
+
+    setError(null);
+    setDeletingId(interview.id);
+    try {
+      await deleteInterview(interview.id);
+      await loadInterviews();
+    } catch (err) {
+      setError(err);
+    } finally {
+      setDeletingId(null);
+    }
+  }
 
   return (
     <section>
@@ -62,6 +77,15 @@ export function InterviewsListPage() {
                 </td>
                 <td>
                   <Link to={`/interviews/${interview.id}`}>Ver detalle</Link>
+                  {" · "}
+                  <button
+                    type="button"
+                    className="button-link-danger"
+                    onClick={() => handleDelete(interview)}
+                    disabled={deletingId === interview.id}
+                  >
+                    {deletingId === interview.id ? "Eliminando…" : "Eliminar"}
+                  </button>
                 </td>
               </tr>
             ))}

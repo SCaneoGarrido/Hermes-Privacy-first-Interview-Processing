@@ -34,7 +34,7 @@ Ver [[MariaDB Connector-C (libmariadb)]].
 
 # Hermes Usage
 
-Consumido a través de `DatabaseManager` (`backend/api/shared/database/`), nunca directamente desde los controllers en el diseño ideal (ver desviación conocida en [[Sprint 2 - Persistence]]).
+Consumido a través de `DatabaseManager` (`backend/api/shared/database/`), a su vez encapsulado por `MySqlInterviewRepository` — los controllers no llaman a `DatabaseManager` directamente (ver [[ADR-012 - Repository y Service Layer para Entrevistas]]).
 
 # Related Notes
 
