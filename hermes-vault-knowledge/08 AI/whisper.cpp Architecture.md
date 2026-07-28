@@ -6,7 +6,7 @@ status: stable
 created: 2026-07-28
 updated: 2026-07-28
 source: Diseño de sesión (Claude Code) + implementacion y verificacion end-to-end el mismo dia
-related: ["ADR-004 - whisper.cpp para Reconocimiento de Voz", "ADR-014 - FFmpeg Estatico via vcpkg para Normalizacion de Audio", "Sprint 4 - Background Processing", "Sprint 5 - Whisper Integration", "Sprint 6 - Ollama Integration", "Filosofia de Repositorios", "whisper.cpp - Repositorio Oficial"]
+related: ["ADR-004 - whisper.cpp para Reconocimiento de Voz", "ADR-014 - FFmpeg Estatico via vcpkg para Normalizacion de Audio", "Sprint 4 - Background Processing", "Sprint 5 - Whisper Integration", "Sprint 6 - Ollama Integration", "Ollama Integration Strategy", "Filosofia de Repositorios", "whisper.cpp - Repositorio Oficial"]
 ---
 
 # Summary
@@ -106,7 +106,13 @@ Cuando Sprint 6 (Ollama) exista, va a leer `raw_transcript_path` (el JSON con ti
 
 ## Conexión con Sprint 6
 
-Cuando el Worker retome el job para la Fase 2, lee `raw_transcript_path` (o el archivo `transcript_raw.json`), arma un prompt para Ollama tipo *"Analiza cronológicamente este JSON. El primer bloque lo dice el Investigador. Deduce cuándo cambia el turno de palabra por contexto gramatical y semántico. Devuelve la transcripción con 'Investigador:'/'Entrevistado:'"*, y reescribe el resultado final vía `upsertTranscriptionResult` (ya resuelto en Sprint 5, ver arriba).
+Cuando el Worker retome el job para la Fase 2, lee `raw_transcript_path` (o el archivo `transcript_raw.json`), y reescribe el resultado final vía `upsertTranscriptionResult` (ya resuelto en Sprint 5, ver arriba). **El diseño detallado de esta fase se movió a [[Ollama Integration Strategy]]** — el prompt de una sola pasada que se sugería acá originalmente no es viable con datos reales (ver nota siguiente).
+
+**Confirmado con datos reales (interview_id=1, entrevista real de ~70 minutos, no un clip de prueba)**: `transcript_raw.json` generó **1804 segmentos**. Esto excede por mucho la ventana de contexto de un LLM local razonable en un solo prompt — el enfoque de "mandale todo el JSON a Ollama de una" queda descartado. Ver [[Ollama Integration Strategy]] para el diseño de chunking que lo reemplaza.
+
+## Execution Time (decisión 2026-07-28)
+
+`interview_jobs.started_at`/`finished_at` (Sprint 4) ya alcanzan para mostrar cuánto tardó un job. Se decidió **no** agregar una columna `execution_time_seconds` — se calcula al leer (`TIMESTAMPDIFF(SECOND, started_at, finished_at)`) y se expone en `GET /interview/:id`. Ventajas sobre una columna nueva: cero migración, funciona retroactivamente para jobs ya completados (interview_id=1 incluida, sin necesidad de reprocesar), y no duplica un dato ya derivable — coherente con el mismo criterio de "no vivan dos fuentes de verdad" ya aplicado a `raw_transcript_path` (ruta, no contenido) en este mismo sprint.
 
 # Why it matters
 

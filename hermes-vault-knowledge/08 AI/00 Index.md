@@ -6,7 +6,7 @@ status: draft
 created: 2026-07-24
 updated: 2026-07-28
 source: .ai/KNOWLEDGE_BACKLOG.md
-related: ["whisper.cpp - Repositorio Oficial", "ADR-004 - whisper.cpp para Reconocimiento de Voz", "ADR-005 - Ollama como Motor LLM", "whisper.cpp Architecture", "ADR-014 - FFmpeg Estatico via vcpkg para Normalizacion de Audio"]
+related: ["whisper.cpp - Repositorio Oficial", "ADR-004 - whisper.cpp para Reconocimiento de Voz", "ADR-005 - Ollama como Motor LLM", "whisper.cpp Architecture", "ADR-014 - FFmpeg Estatico via vcpkg para Normalizacion de Audio", "Ollama Integration Strategy", "ADR-015 - cpp-httplib como Cliente HTTP para Ollama"]
 ---
 
 # Summary
@@ -18,7 +18,7 @@ related: ["whisper.cpp - Repositorio Oficial", "ADR-004 - whisper.cpp para Recon
 Temas identificados en `.ai/KNOWLEDGE_BACKLOG.md` (alta prioridad):
 
 - [x] whisper.cpp Architecture — ver [[whisper.cpp Architecture]] y [[ADR-014 - FFmpeg Estatico via vcpkg para Normalizacion de Audio]] (diseñado, implementado y verificado end-to-end 2026-07-28, ambos `status: stable`/`accepted`)
-- [ ] Ollama API
+- [x] Ollama API — ver [[Ollama Integration Strategy]] y [[ADR-015 - cpp-httplib como Cliente HTTP para Ollama]] (diseño escrito 2026-07-28, `status: draft`/`proposed`, pendiente de aprobación antes de implementar Sprint 6)
 
 Adicionalmente, pendiente documentar el modelo por defecto **Qwen** (.ai/PROJECT.md) como nota propia una vez se investigue su configuración concreta en Hermes.
 
@@ -49,6 +49,8 @@ Ver [[ADR-004 - whisper.cpp para Reconocimiento de Voz]], [[ADR-005 - Ollama com
 - [[Ollama - Documentacion Oficial]]
 - [[whisper.cpp Architecture]]
 - [[ADR-014 - FFmpeg Estatico via vcpkg para Normalizacion de Audio]]
+- [[Ollama Integration Strategy]]
+- [[ADR-015 - cpp-httplib como Cliente HTTP para Ollama]]
 
 # References
 
