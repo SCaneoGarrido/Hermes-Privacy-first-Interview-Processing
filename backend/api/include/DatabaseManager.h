@@ -5,7 +5,8 @@
 #include <stdexcept>
 #include <variant>
 #include <vector>
-
+#include <optional>
+#include <cstdint>
 // Excepcion personalizada para el dominio de Base de Datos
 class DatabaseException : public std::runtime_error {
     public:
@@ -56,5 +57,12 @@ class DatabaseManager {
         // Es idempotente porque el script usa CREATE TABLE IF NOT EXISTS.
         void migrateTables(const std::string& sqlFilePath);
         // Método seguro con Prepared Statements para operaciones de escritura (INSERT/UPDATE)
-        bool executePrepared(const std::string& query, const std::vector<SqlParam>& params);
+        std::optional<uint64_t> executePrepared(
+            const std::string& query, 
+            const std::vector<SqlParam>& params, 
+            bool return_id = false
+        );
+        std::vector<std::vector<SqlParam>> executeQuery(
+        const std::string& query, 
+        const std::vector<SqlParam>& params = {});
 };

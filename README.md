@@ -82,7 +82,7 @@ Preparar completamente el entorno de desarrollo.
 - Configuración vcpkg
 - Primer proyecto compilando
 - Configuración de Crow
-- Configuración SQLite
+- Configuración MySQL (Docker Compose)
 - Configuración Logging
 - Primer endpoint REST
 - Documentación inicial
@@ -131,7 +131,7 @@ Persistencia de entrevistas.
 
 ## Entregables
 
-- SQLite
+- MySQL (Docker Compose + libmariadb)
 - CRUD entrevistas
 - Gestión de archivos
 - Metadata
@@ -434,7 +434,7 @@ Ejemplo
 - Ollama
 - Exportación DOCX
 - React
-- SQLite
+- MySQL (Docker Compose)
 - Instalador Windows
 - Documentación completa
 

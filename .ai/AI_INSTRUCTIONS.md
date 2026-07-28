@@ -4,7 +4,7 @@ Always respect Clean Architecture.
 
 Never introduce business logic inside controllers.
 
-Never access SQLite directly from controllers.
+Never access the database directly from controllers.
 
 Always create interfaces for infrastructure.
 

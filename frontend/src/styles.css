@@ -1,0 +1,283 @@
+:root {
+  color-scheme: light dark;
+  --bg: #0f1115;
+  --surface: #171a21;
+  --border: #2a2e37;
+  --text: #e7e9ee;
+  --text-muted: #9aa1ad;
+  --accent: #5b8cff;
+  --success: #35c17d;
+  --warning: #e0a84c;
+  --danger: #e5566a;
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+@media (prefers-color-scheme: light) {
+  :root {
+    --bg: #f5f6f8;
+    --surface: #ffffff;
+    --border: #dfe2e8;
+    --text: #1c1f26;
+    --text-muted: #5b6270;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+}
+
+a {
+  color: var(--accent);
+}
+
+.app-shell {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.app-header {
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+  padding: 1rem 1.5rem;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.app-title {
+  font-weight: 700;
+  font-size: 1.25rem;
+  text-decoration: none;
+  color: var(--text);
+}
+
+.app-nav {
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+  flex: 1;
+}
+
+.app-main {
+  flex: 1;
+  padding: 1.5rem;
+  max-width: 960px;
+  width: 100%;
+  margin: 0 auto;
+}
+
+.page-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1.25rem;
+}
+
+.button-link {
+  background: var(--accent);
+  color: white;
+  padding: 0.4rem 0.8rem;
+  border-radius: 6px;
+  text-decoration: none;
+  font-size: 0.9rem;
+}
+
+.muted {
+  color: var(--text-muted);
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.table th,
+.table td {
+  text-align: left;
+  padding: 0.6rem 0.5rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.table th {
+  color: var(--text-muted);
+  font-weight: 600;
+  font-size: 0.85rem;
+  text-transform: uppercase;
+}
+
+.badge {
+  display: inline-block;
+  padding: 0.15rem 0.55rem;
+  border-radius: 999px;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.badge-neutral {
+  background: color-mix(in srgb, var(--text-muted) 25%, transparent);
+  color: var(--text);
+}
+
+.badge-info {
+  background: color-mix(in srgb, var(--accent) 25%, transparent);
+  color: var(--accent);
+}
+
+.badge-warning {
+  background: color-mix(in srgb, var(--warning) 25%, transparent);
+  color: var(--warning);
+}
+
+.badge-success {
+  background: color-mix(in srgb, var(--success) 25%, transparent);
+  color: var(--success);
+}
+
+.badge-danger {
+  background: color-mix(in srgb, var(--danger) 25%, transparent);
+  color: var(--danger);
+}
+
+.health-indicator {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+.health-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--text-muted);
+}
+
+.health-online .health-dot {
+  background: var(--success);
+}
+
+.health-offline .health-dot {
+  background: var(--danger);
+}
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 1.25rem;
+  margin-top: 1.25rem;
+}
+
+.card h2 {
+  margin-top: 0;
+  font-size: 1.05rem;
+}
+
+.form,
+.form-section .form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+  max-width: 420px;
+}
+
+.form-inline {
+  flex-direction: row;
+  align-items: center;
+  max-width: none;
+  margin: 0.75rem 0;
+}
+
+.form label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  font-size: 0.9rem;
+  color: var(--text-muted);
+}
+
+.form input[type="text"],
+.form input[type="datetime-local"],
+.form input[type="file"] {
+  font: inherit;
+  padding: 0.5rem 0.6rem;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+}
+
+button {
+  font: inherit;
+  padding: 0.5rem 1rem;
+  border-radius: 6px;
+  border: none;
+  background: var(--accent);
+  color: white;
+  cursor: pointer;
+  width: fit-content;
+}
+
+button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.details-grid {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.3rem 1rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 1rem 1.25rem;
+}
+
+.details-grid dt {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+
+.details-grid dd {
+  margin: 0;
+}
+
+.banner {
+  border-radius: 8px;
+  padding: 0.75rem 1rem;
+  margin-bottom: 1rem;
+  border: 1px solid transparent;
+}
+
+.banner p {
+  margin: 0.2rem 0 0;
+}
+
+.banner-hint {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+.banner-error {
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
+  border-color: color-mix(in srgb, var(--danger) 40%, transparent);
+}
+
+.banner-warning {
+  background: color-mix(in srgb, var(--warning) 12%, transparent);
+  border-color: color-mix(in srgb, var(--warning) 40%, transparent);
+}
+
+.banner-success {
+  background: color-mix(in srgb, var(--success) 12%, transparent);
+  border-color: color-mix(in srgb, var(--success) 40%, transparent);
+}

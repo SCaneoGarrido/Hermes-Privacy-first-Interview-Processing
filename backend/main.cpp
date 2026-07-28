@@ -65,6 +65,18 @@ int main()
         return interviewController.handleInterviewRegistration(req);
     });
 
+    CROW_ROUTE(app, "/interviews").methods(crow::HTTPMethod::GET)([&interviewController](const crow::request& req) {
+        return interviewController.getInterviews(req);
+    });
+
+    CROW_ROUTE(app, "/interview/<int>").methods(crow::HTTPMethod::GET)([&interviewController](int id) {
+        return interviewController.getInterview(id);
+    });
+
+    CROW_ROUTE(app, "/interview/<int>/process").methods(crow::HTTPMethod::POST)([&interviewController](int id) {
+        return interviewController.processInterview(id);
+    });
+
     // ==== Rutas/metodos sin match (404 / 405): sin esto, Crow devuelve su
     // respuesta por defecto (body vacio o texto plano), rompiendo el contrato.
     CROW_CATCHALL_ROUTE(app)([](const crow::request&, crow::response& res) {

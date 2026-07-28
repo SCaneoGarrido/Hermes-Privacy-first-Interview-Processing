@@ -4,7 +4,7 @@ aliases: ["References MOC", "14 References"]
 tags: [moc, references]
 status: stable
 created: 2026-07-24
-updated: 2026-07-24
+updated: 2026-07-28
 source: .ai/OFFICIAL_SOURCES.md
 related: ["Home", "Politica de Fuentes Tecnicas"]
 ---
@@ -22,7 +22,9 @@ Ver [[Politica de Fuentes Tecnicas]] para las reglas de priorización y las fuen
 - [[CMake - Documentacion Oficial]]
 - [[vcpkg - Documentacion Oficial]]
 - [[Crow - Documentacion Oficial]]
-- [[SQLite - Documentacion Oficial]]
+- [[MySQL - Documentacion Oficial]]
+- [[MariaDB Connector-C - Documentacion Oficial]]
+- [[Docker - Documentacion Oficial]]
 
 **Logging, serialización y testing**
 - [[spdlog - Repositorio Oficial]]
@@ -64,6 +66,7 @@ Ver [[Politica de Fuentes Tecnicas]] para las reglas de priorización y las fuen
 - [[Boost - Documentacion Oficial]]
 - [[doctest - Repositorio Oficial]]
 - [[Model Context Protocol (MCP) - Repositorio Oficial]]
+- [[SQLite - Documentacion Oficial]] (adoptada originalmente vía [[ADR-006 - SQLite como Base de Datos|ADR-006]], superada por [[ADR-008 - MySQL como Base de Datos|ADR-008]])
 
 **Libros aprobados (Priority 3)**
 - [[Libro - Clean Architecture (Robert C. Martin)]]

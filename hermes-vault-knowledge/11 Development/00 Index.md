@@ -4,9 +4,9 @@ aliases: ["Development Index", "11 Development"]
 tags: [moc, development, index]
 status: draft
 created: 2026-07-24
-updated: 2026-07-24
+updated: 2026-07-28
 source: .ai/CODING_STANDARD.md
-related: ["Hermes Coding Standard", "Compilar y Ejecutar el Backend con CMake"]
+related: ["Hermes Coding Standard", "Compilar y Ejecutar el Backend con CMake", "Levantar el Stack Completo (Docker + Backend + Frontend)"]
 ---
 
 # Summary
@@ -17,6 +17,7 @@ related: ["Hermes Coding Standard", "Compilar y Ejecutar el Backend con CMake"]
 
 - [[Hermes Coding Standard]] — nomenclatura, RAII, smart pointers, reglas estructurales.
 - [[Compilar y Ejecutar el Backend con CMake]] — flujo verificado de build/run con CMake + vcpkg en Windows/MinGW, y errores comunes de configuración.
+- [[Levantar el Stack Completo (Docker + Backend + Frontend)]] — orden y variables de entorno para correr MySQL (Docker) + backend + frontend juntos, y los gotchas de Windows encontrados en la práctica.
 
 Pendiente de evaluar como futuras notas atómicas (no listadas aún en `.ai/KNOWLEDGE_BACKLOG.md`): Logging ([[spdlog - Repositorio Oficial|spdlog]]), flujo de Pull Request / revisión de código.
 
@@ -46,6 +47,7 @@ Referencia obligatoria antes de escribir código en cualquier sprint del [[04 Ro
 
 - [[Hermes Coding Standard]]
 - [[Compilar y Ejecutar el Backend con CMake]]
+- [[Levantar el Stack Completo (Docker + Backend + Frontend)]]
 - [[Git - Documentacion Oficial]]
 - [[GitHub Docs - Documentacion Oficial]]
 - [[Visual Studio - Documentacion Oficial]]

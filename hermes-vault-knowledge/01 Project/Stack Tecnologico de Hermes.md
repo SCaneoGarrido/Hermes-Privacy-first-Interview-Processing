@@ -4,9 +4,9 @@ aliases: ["Hermes Tech Stack"]
 tags: [project, hermes, stack]
 status: stable
 created: 2026-07-24
-updated: 2026-07-24
+updated: 2026-07-28
 source: .ai/PROJECT.md
-related: ["Hermes - Vision General", "ADR-002 - C++20 como Lenguaje", "ADR-003 - Crow como Framework REST", "ADR-004 - whisper.cpp para Reconocimiento de Voz", "ADR-005 - Ollama como Motor LLM", "ADR-006 - SQLite como Base de Datos"]
+related: ["Hermes - Vision General", "ADR-002 - C++20 como Lenguaje", "ADR-003 - Crow como Framework REST", "ADR-004 - whisper.cpp para Reconocimiento de Voz", "ADR-005 - Ollama como Motor LLM", "ADR-008 - MySQL como Base de Datos", "ADR-009 - libmariadb como Cliente MySQL", "ADR-010 - Docker Compose para MySQL Local"]
 ---
 
 # Summary
@@ -18,9 +18,10 @@ Conjunto de tecnologías oficiales adoptadas por Hermes para backend, frontend, 
 | Área | Tecnología |
 |---|---|
 | Lenguaje | C++20 |
-| Frontend | React + TypeScript |
+| Frontend | React + TypeScript + Vite |
 | REST Framework | [[Crow - Documentacion Oficial|Crow]] |
-| Base de datos | SQLite |
+| Base de datos | MySQL, corriendo en Docker Compose |
+| Cliente de BD (C++) | [[MariaDB Connector-C (libmariadb)|libmariadb]] |
 | Reconocimiento de voz | [[whisper.cpp - Repositorio Oficial|whisper.cpp]] |
 | LLM | [[Ollama - Documentacion Oficial|Ollama]] (modelo por defecto: Qwen) |
 | Logging | spdlog |
@@ -53,7 +54,9 @@ Cada entrada de esta tabla corresponde a una ADR específica en [[03 ADR]] que d
 - [[ADR-003 - Crow como Framework REST]]
 - [[ADR-004 - whisper.cpp para Reconocimiento de Voz]]
 - [[ADR-005 - Ollama como Motor LLM]]
-- [[ADR-006 - SQLite como Base de Datos]]
+- [[ADR-008 - MySQL como Base de Datos]]
+- [[ADR-009 - libmariadb como Cliente MySQL]]
+- [[ADR-010 - Docker Compose para MySQL Local]]
 
 # References
 

@@ -34,6 +34,13 @@ crow::response FileController::handleFileUpload(const crow::request& req, int& i
             return ApiResponse::failure(500, "INTERNAL_SERVER_ERROR", "Error interno del servidor");
         }
 
+        // La entrevista ya tiene audio: pasa de "pending_audio" a "pending_processing".
+        // No aborta el request si esto falla (el audio ya quedo guardado); solo se loggea.
+        std::vector<SqlParam> statusParams = {interview_id};
+        if (!db.executePrepared("UPDATE interviews SET status = 'pending_processing' WHERE id = ?", statusParams)) {
+            log_event("[fileController][handleFileUpload] Fallo actualizando el status de la entrevista a pending_processing");
+        }
+
         crow::json::wvalue data;
         data["filename"] = filename;
         data["path"] = savedPath;

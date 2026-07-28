@@ -1,8 +1,9 @@
 https://cmake.org/documentation/
 https://crowcpp.org/master/
 https://github.com/crowcpp/crow
-https://sqlite.org/docs.html
-https://sqlite.org/c3ref/intro.html
+https://dev.mysql.com/doc/refman/en/
+https://mariadb.com/kb/en/mariadb-connector-c/
+https://docs.docker.com/
 https://github.com/ggml-org/whisper.cpp
 https://react.dev/
 https://vitejs.dev/

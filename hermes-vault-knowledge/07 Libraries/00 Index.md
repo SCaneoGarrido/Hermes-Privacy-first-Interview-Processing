@@ -4,21 +4,24 @@ aliases: ["Libraries Index", "07 Libraries"]
 tags: [moc, libraries, index]
 status: draft
 created: 2026-07-24
-updated: 2026-07-24
+updated: 2026-07-28
 source: .ai/KNOWLEDGE_BACKLOG.md
-related: ["SQLite - Documentacion Oficial", "React - Documentacion Oficial", "Stack Tecnologico de Hermes"]
+related: ["MariaDB Connector-C (libmariadb)", "React - Documentacion Oficial", "Stack Tecnologico de Hermes"]
 ---
 
 # Summary
 
-Índice de notas atómicas sobre librerías concretas usadas por Hermes. Sección pendiente de desarrollo.
+Índice de notas atómicas sobre librerías concretas usadas por Hermes.
 
 # Explanation
+
+**Disponible**
+- [x] [[MariaDB Connector-C (libmariadb)]] — cliente MySQL usado por `DatabaseManager` (ver [[ADR-009 - libmariadb como Cliente MySQL]])
 
 Temas identificados en `.ai/KNOWLEDGE_BACKLOG.md`:
 
 **Alta prioridad**
-- [ ] SQLite Transactions
+- [ ] MySQL Prepared Statements (ampliar [[MariaDB Connector-C (libmariadb)]] con más detalle de `MYSQL_BIND`)
 - [ ] React Query
 
 **No listadas en el backlog pero presentes en el stack** (.ai/PROJECT.md), con fuente oficial ya confirmada el 2026-07-24 (`docs/documentation_tech.yml`), pendientes de nota atómica propia:
@@ -45,7 +48,7 @@ Ver [[Stack Tecnologico de Hermes]] para la tabla completa de tecnologías.
 
 # Related Notes
 
-- [[SQLite - Documentacion Oficial]]
+- [[MariaDB Connector-C (libmariadb)]]
 - [[React - Documentacion Oficial]]
 - [[Stack Tecnologico de Hermes]]
 - [[nlohmann/json - Documentacion Oficial]]

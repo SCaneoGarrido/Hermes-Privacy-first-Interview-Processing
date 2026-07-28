@@ -6,7 +6,7 @@
 - [ ] Smart Pointers
 - [ ] Crow Routing
 - [ ] CMake Presets
-- [ ] SQLite Transactions
+- [ ] MySQL Prepared Statements (libmariadb, MYSQL_BIND / std::variant param mapping)
 - [ ] whisper.cpp Architecture
 - [ ] Ollama API
 - [ ] React Query

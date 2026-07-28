@@ -4,18 +4,21 @@ aliases: ["Patterns Index", "09 Patterns"]
 tags: [moc, patterns, index]
 status: draft
 created: 2026-07-24
-updated: 2026-07-24
+updated: 2026-07-28
 source: .ai/KNOWLEDGE_BACKLOG.md
-related: ["Filosofia de Repositorios", "Clean Architecture"]
+related: ["Filosofia de Repositorios", "Clean Architecture", "Contrato de Respuesta API Uniforme"]
 ---
 
 # Summary
 
-Índice de patrones de diseño de software relevantes para Hermes. Sección pendiente de desarrollo.
+Índice de patrones de diseño de software relevantes para Hermes.
 
 # Explanation
 
-Temas identificados en `.ai/KNOWLEDGE_BACKLOG.md` (prioridad media):
+**Disponible**
+- [x] [[Contrato de Respuesta API Uniforme]] — envelope `{success, data, error}` uniforme en toda la REST API (ver [[ADR-011 - Contrato de Respuesta API Uniforme]])
+
+Temas identificados en `.ai/KNOWLEDGE_BACKLOG.md` (prioridad media), todavía pendientes:
 
 - [ ] Dependency Injection
 - [ ] Repository Pattern
@@ -43,6 +46,7 @@ Ver [[Filosofia de Repositorios]] para el caso de uso completo.
 
 - [[Filosofia de Repositorios]]
 - [[Clean Architecture]]
+- [[Contrato de Respuesta API Uniforme]]
 
 # References
 

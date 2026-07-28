@@ -3,6 +3,7 @@
 
 #include "crow.h"
 #include "../ApiResponse.h"
+#include "../AudioSignature.h"
 #include "../Constanst.h"
 #include "../logger.h"
 #include <algorithm>
@@ -57,6 +58,19 @@ struct FileFormatGuard : crow::ILocalMiddleware {
                 log_error_ss << "[middlewares][FileFormatGuard] - unsupported content type: '" << contentType << "'";
                 log_event(log_error_ss.str());
                 res = ApiResponse::failure(400, "UNSUPPORTED_MEDIA_TYPE", "Formato de archivo no permitido");
+                res.end();
+                return;
+            }
+
+            // VALIDACIÓN 3: ¿el contenido real coincide con el formato declarado?
+            // El Content-Type lo pone el cliente (Postman, curl, etc.) y no prueba
+            // nada por si solo -- cualquier texto plano pasa la validacion 2 si
+            // el header dice "audio/wav". Esto chequea los bytes reales del archivo.
+            if (!AudioSignature::isValid(contentType, file_part.body)) {
+                std::stringstream log_error_ss;
+                log_error_ss << "[middlewares][FileFormatGuard] - el contenido no coincide con el formato declarado '" << contentType << "'";
+                log_event(log_error_ss.str());
+                res = ApiResponse::failure(400, "INVALID_FILE_CONTENT", "El archivo no es un audio valido del formato declarado");
                 res.end();
                 return;
             }

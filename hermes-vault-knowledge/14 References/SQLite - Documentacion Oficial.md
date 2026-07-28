@@ -4,10 +4,13 @@ aliases: []
 tags: [reference, sqlite, libraries]
 status: stable
 created: 2026-07-24
-updated: 2026-07-24
+updated: 2026-07-28
 source: https://sqlite.org/docs.html
-related: ["ADR-006 - SQLite como Base de Datos"]
+related: ["ADR-006 - SQLite como Base de Datos", "MySQL - Documentacion Oficial"]
 ---
+
+> [!note] No adoptada
+> SQLite fue reemplazada por MySQL como base de datos de Hermes ([[ADR-008 - MySQL como Base de Datos|ADR-008]], 2026-07-28). Esta nota se conserva como referencia histórica/comparativa; ver [[MySQL - Documentacion Oficial]] para la fuente actual.
 
 # Summary
 
@@ -22,7 +25,7 @@ Fuentes oficiales:
 
 # Why it matters
 
-Es la base de datos embebida de Hermes ([[ADR-006 - SQLite como Base de Datos]]); su API en C es la que consumirán los repositorios de la capa `Infrastructure`.
+Fue la base de datos embebida elegida originalmente para Hermes ([[ADR-006 - SQLite como Base de Datos]], superada por [[ADR-008 - MySQL como Base de Datos|ADR-008]]).
 
 # Best Practices
 

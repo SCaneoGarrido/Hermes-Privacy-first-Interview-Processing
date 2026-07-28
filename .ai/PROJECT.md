@@ -62,7 +62,7 @@ The project consists of one executable with multiple independent modules.
 
 Frameworks are implementation details.
 
-Business logic must never depend on Crow, SQLite, Whisper or Ollama.
+Business logic must never depend on Crow, MySQL, Whisper or Ollama.
 
 6. Open Source
 
@@ -90,7 +90,7 @@ Crow
 
 Database
 
-SQLite
+MySQL (Docker Compose, libmariadb client)
 
 Speech Recognition
 
@@ -144,9 +144,14 @@ ILLMClient
 
 OllamaClient
 
-Repositories should hide SQLite.
+Repositories should hide MySQL.
 
 Controllers should never contain business logic.
+
+Known deviation (2026-07-28): controllers currently call `DatabaseManager`
+directly (no `IInterviewRepository`-style interface exists yet). Tracked as
+technical debt, not a change of principle -- see the Hermes vault note for
+Sprint 2 - Persistence.
 
 ---
 

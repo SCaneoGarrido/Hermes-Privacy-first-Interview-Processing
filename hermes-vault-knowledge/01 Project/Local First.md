@@ -4,9 +4,9 @@ aliases: []
 tags: [project, principle, hermes]
 status: stable
 created: 2026-07-24
-updated: 2026-07-24
+updated: 2026-07-28
 source: .ai/PROJECT.md
-related: ["Privacy First", "Hermes - Vision General", "Stack Tecnologico de Hermes"]
+related: ["Privacy First", "Hermes - Vision General", "Stack Tecnologico de Hermes", "ADR-010 - Docker Compose para MySQL Local"]
 ---
 
 # Summary
@@ -24,7 +24,7 @@ Un investigador debe poder usar Hermes en un entorno sin Internet (por ejemplo, 
 # Best Practices
 
 - Cualquier feature nueva debe poder probarse con la red deshabilitada.
-- Preferir bibliotecas embebidas o binarios locales (SQLite, whisper.cpp, Ollama) sobre clientes de servicios remotos.
+- Preferir binarios locales (whisper.cpp, Ollama) sobre clientes de servicios remotos.
 
 # Common Mistakes
 
@@ -32,7 +32,7 @@ Un investigador debe poder usar Hermes en un entorno sin Internet (por ejemplo, 
 
 # Hermes Usage
 
-Local First fundamenta [[ADR-004 - whisper.cpp para Reconocimiento de Voz]], [[ADR-005 - Ollama como Motor LLM]] y [[ADR-006 - SQLite como Base de Datos]] (sin servidor).
+Local First fundamenta [[ADR-004 - whisper.cpp para Reconocimiento de Voz]] y [[ADR-005 - Ollama como Motor LLM]]. La base de datos es la excepción matizada: [[ADR-008 - MySQL como Base de Datos|MySQL]] corre localmente vía [[ADR-010 - Docker Compose para MySQL Local|Docker]], así que sigue sin depender de Internet ni de un servicio externo, pero sí requiere un proceso de servidor local — a diferencia de SQLite (embebido, sin servidor), que era la elección original ([[ADR-006 - SQLite como Base de Datos]], superada).
 
 # Related Notes
 

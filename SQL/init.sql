@@ -18,10 +18,21 @@ CREATE TABLE IF NOT EXISTS interviews (
     interview_date          DATETIME     NOT NULL,
     interview_type          VARCHAR(100) NOT NULL,
     interview_subject_type  VARCHAR(100) NOT NULL,
+    -- pending_audio | pending_processing | processing | completed | failed
+    status                  VARCHAR(20)  NOT NULL DEFAULT 'pending_audio',
     created_at              TIMESTAMP    DEFAULT CURRENT_TIMESTAMP,
     updated_at              TIMESTAMP    DEFAULT CURRENT_TIMESTAMP
                                           ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB;
+
+-- La CREATE TABLE de arriba es idempotente pero no retroactiva: si la tabla
+-- ya existia de una migracion anterior (sin "status"), esto la actualiza.
+-- MySQL (a diferencia de MariaDB) no soporta "ADD COLUMN IF NOT EXISTS", asi
+-- que dependemos de que DatabaseManager::migrateTables tolere el error
+-- "Duplicate column name" (1060) cuando la columna ya existe.
+ALTER TABLE interviews
+    ADD COLUMN status VARCHAR(20) NOT NULL DEFAULT 'pending_audio'
+    AFTER interview_subject_type;
 
 -- ------------------------------------------------------------
 -- Tabla: interviews_audio

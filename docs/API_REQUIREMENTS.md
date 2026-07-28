@@ -1,0 +1,175 @@
+# Requisitos de API para el Frontend
+
+Este documento describe, desde el punto de vista del frontend, qué expone
+hoy la API de Crow para soportar el flujo mínimo: **crear una entrevista →
+asociarle un audio → enviarla a procesar**.
+
+El frontend está construido contra el contrato descripto acá (ver
+`frontend/src/api/`). Si algún endpoint dejara de existir o cambiara de
+forma, el `CROW_CATCHALL_ROUTE` sigue devolviendo
+`{"success":false,"error":{"code":"NOT_FOUND",...}}` en vez de romper la UI
+en silencio.
+
+Todas las respuestas siguen el contrato ya definido en
+`backend/api/rules/contract.md`:
+
+```json
+{
+  "success": true | false,
+  "data": <objeto | array | null>,
+  "error": { "code": "SCREAMING_SNAKE_CASE", "message": "..." } | null
+}
+```
+
+---
+
+## 1. Endpoints implementados
+
+### `GET /health`
+Se usa para el indicador de estado del backend en el header del frontend.
+
+### `POST /interview`
+Crea una entrevista. Body:
+```json
+{ "date": "2026-07-28 10:00:00", "type": "tecnica", "subject_type": "candidato" }
+```
+Responde `data: { "code": "CREATED", "id": 7 }`. `InterviewController::handleInterviewRegistration`
+usa `DatabaseManager::executePrepared(..., /*return_id=*/true)`, que internamente
+llama a `mysql_stmt_insert_id`.
+
+### `POST /upload`
+Sube un audio y lo asocia a una entrevista. Requiere:
+- Multipart con campo `file` (mp3/wav/ogg/m4a), validado contra la firma real
+  de bytes del archivo (no solo el `Content-Type` declarado — ver
+  `AudioSignature.h`).
+- Header **`interview_id`** (entero, validado por `HeaderIdGuard`).
+
+Responde `data: { "filename", "path", "code": "ACCEPTED" }`. Al guardar el
+audio, además actualiza `interviews.status` a `pending_processing`.
+
+### `GET /interviews` — listado
+`InterviewController::getInterviews`. Devuelve un array leyendo la columna
+`status` directamente (ver sección 2):
+
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "id": 7,
+      "date": "2026-07-28 10:00:00",
+      "type": "tecnica",
+      "subject_type": "candidato",
+      "status": "pending_audio",
+      "created_at": "2026-07-28 10:00:05"
+    }
+  ],
+  "error": null
+}
+```
+
+### `GET /interview/:id` — detalle
+`InterviewController::getInterview`. Devuelve la entrevista con su audio y
+resultado si existen (`null` si no, coherente con el `UNIQUE(interview_id)`
+de `SQL/init.sql`):
+
+```json
+{
+  "success": true,
+  "data": {
+    "id": 7,
+    "date": "2026-07-28 10:00:00",
+    "type": "tecnica",
+    "subject_type": "candidato",
+    "status": "pending_processing",
+    "audio": { "path": "./uploads/....wav", "format": ".wav", "size": 32 },
+    "result": null
+  },
+  "error": null
+}
+```
+`404 NOT_FOUND` si el id no existe.
+
+### `POST /interview/:id/process` — disparar transcripción
+`InterviewController::processInterview`. Botón "Enviar a procesar" de la UI:
+1. `404 NOT_FOUND` si el id no existe.
+2. `409 AUDIO_REQUIRED` si la entrevista todavía no tiene audio asociado.
+3. Si tiene audio, marca `status = 'processing'` y responde `202`:
+   ```json
+   { "success": true, "data": { "id": 7, "status": "processing" }, "error": null }
+   ```
+
+**Importante — límite conocido**: esto solo deja constancia de que se pidió
+procesar. No hay cola de trabajos ni Whisper integrado todavía (Sprint 4/5
+del roadmap), así que ninguna entrevista llega sola a `completed` o `failed`
+— esos dos estados quedan sin forma de alcanzarse hasta que exista esa
+integración. `TranscriptionController` (esqueleto en
+`backend/api/include/transcriptionController.h`) ya compila pero sigue sin
+implementación ni ruta registrada — es de ahí, no de `InterviewController`,
+de donde debería salir la transcripción real cuando se construya.
+
+---
+
+## 2. Columna `status`
+
+`interviews.status VARCHAR(20) NOT NULL DEFAULT 'pending_audio'`
+(`SQL/init.sql`). Valores usados por el frontend
+(`src/api/types.ts::InterviewStatus`): `pending_audio` | `pending_processing`
+| `processing` | `completed` | `failed`.
+
+La migración es retroactiva: `SQL/init.sql` trae, además del `CREATE TABLE
+IF NOT EXISTS`, un `ALTER TABLE ... ADD COLUMN` explícito para bases que ya
+existían sin esta columna. MySQL (a diferencia de MariaDB) no soporta `ADD
+COLUMN IF NOT EXISTS`, así que la idempotencia la garantiza
+`DatabaseManager::migrateTables`, que tolera el error 1060 (`ER_DUP_FIELDNAME`,
+"la columna ya existe") en vez de abortar la migración.
+
+**Nota sobre datos viejos**: filas de `interviews` creadas antes de este
+cambio (con audio ya subido en su momento) van a mostrar `pending_audio`
+hasta que se las reprocese, porque el valor por default se aplicó
+retroactivamente sin inspeccionar `interviews_audio`. No afecta datos
+nuevos — el ciclo completo (`pending_audio` → `pending_processing` vía
+`/upload` → `processing` vía `/interview/:id/process`) ya se probó de punta
+a punta.
+
+---
+
+## 3. CORS / mismo origen
+
+El frontend en desarrollo corre en `http://localhost:5173` (Vite) y el
+backend en `http://localhost:18080`. El `vite.config.ts` del frontend define
+un **proxy**: toda request a `/api/*` se reenvía a
+`http://localhost:18080/*` (sin el prefijo `/api`). Como el navegador ve
+todo como el mismo origen, esto evita CORS por completo en desarrollo — no
+requiere ningún cambio en el backend.
+
+Si en el futuro el frontend se sirve compilado (`npm run build`) desde un
+origen distinto al backend, ahí sí hace falta uno de estos dos (**todavía
+sin implementar, no bloquea nada en desarrollo**):
+- Servir frontend y backend detrás del mismo reverse proxy (mismo origen), o
+- Agregar en Crow los headers `Access-Control-Allow-Origin`,
+  `Access-Control-Allow-Methods`, `Access-Control-Allow-Headers` (incluyendo
+  `interview_id`, que es un header custom y dispara preflight `OPTIONS`), y
+  manejar el método `OPTIONS` explícitamente (hoy cae en el
+  `CROW_CATCHALL_ROUTE` y devuelve un 404 JSON, no una respuesta de
+  preflight válida).
+
+---
+
+## 4. Estado actual
+
+| # | Endpoint / cambio | Estado |
+|---|--------------------|--------|
+| 1 | `POST /interview` devuelve `id` | ✅ |
+| 2 | `GET /interviews` (listado) | ✅ |
+| 3 | `GET /interview/:id` (detalle) | ✅ |
+| 4 | `POST /interview/:id/process` | ✅ (solo marca `processing`, sin pipeline real) |
+| 5 | Columna `status` en `interviews` | ✅ (retroactivo vía migración idempotente) |
+| 6 | `transcriptionController.h` compila | ✅ (sin implementación ni ruta — Sprint 5) |
+| 7 | CORS | pendiente, solo si se despliega fuera del proxy de Vite |
+
+El flujo completo — crear entrevista, ver el id, subir audio, ver el detalle
+con el audio asociado, disparar "procesar" y ver el estado cambiar — funciona
+de punta a punta contra el backend real. Lo que falta para "terminar" el
+producto es la transcripción real (Whisper) y sus estados `completed`/`failed`,
+que son trabajo de otro sprint, no de la API en sí.

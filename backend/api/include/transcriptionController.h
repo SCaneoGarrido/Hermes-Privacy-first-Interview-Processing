@@ -6,7 +6,7 @@
 
 class TranscriptionController {
     public:
-        crow::response handleTranscription(const crow::request& req);  
-}
+        crow::response handleTranscription(const crow::request& req);
+};
 
-#endif // TRANSCRIPTION_CONTROLLER_H3exi
+#endif // TRANSCRIPTION_CONTROLLER_H

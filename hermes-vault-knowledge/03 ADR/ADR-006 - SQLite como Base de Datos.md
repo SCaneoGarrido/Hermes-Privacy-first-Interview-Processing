@@ -1,13 +1,16 @@
 ---
 title: ADR-006 - SQLite como Base de Datos
 aliases: []
-tags: [adr, hermes, libraries]
-status: accepted
+tags: [adr, hermes, libraries, superseded]
+status: superseded
 created: 2026-07-24
-updated: 2026-07-24
+updated: 2026-07-28
 source: .ai/DECISIONS.md
-related: ["Local First", "Stack Tecnologico de Hermes", "Filosofia de Repositorios"]
+related: ["Local First", "Stack Tecnologico de Hermes", "Filosofia de Repositorios", "ADR-008 - MySQL como Base de Datos"]
 ---
+
+> [!warning] Superada
+> Esta decisión fue reemplazada por [[ADR-008 - MySQL como Base de Datos]] el 2026-07-28, antes de que existiera ningún código real de acceso a datos (la carpeta de persistencia estaba vacía en el momento del cambio). Se conserva esta nota por su valor histórico; no describe el estado actual del proyecto.
 
 # Context
 
@@ -30,7 +33,7 @@ Usar **SQLite** como base de datos.
 
 # Status
 
-Accepted
+Superseded por [[ADR-008 - MySQL como Base de Datos]] (2026-07-28)
 
 # References
 
