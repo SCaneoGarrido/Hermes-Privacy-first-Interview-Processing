@@ -11,6 +11,7 @@ related: ["ADR-005 - Ollama como Motor LLM", "ADR-015 - cpp-httplib como Cliente
 
 # Summary
 
+
 Estrategia para las cuatro tareas de Sprint 6 (corrección ortográfica/puntuación, estructuración por hablante, resúmenes, anonimización) sobre `transcript_raw.json` (Sprint 5), resolviendo el problema real descubierto con datos de producción: una entrevista de 70 minutos genera **1804 segmentos** — demasiado para un único prompt a un LLM local.
 
 # Explanation
@@ -66,9 +67,9 @@ Patrón *map-reduce* estándar: resumir cada bloque del transcript ya corregido 
 
 Si Ollama no está corriendo, no tiene el modelo, o falla a mitad de las fases: el `transcript_final.txt` sin diarizar de Sprint 5 **debe seguir siendo el resultado disponible**, no bloquear la entrevista completa. Mismo criterio que la carga perezosa del modelo de whisper — la ausencia de una capacidad de IA no debería tumbar el pipeline entero, solo esa mejora puntual. Esto es más delicado con la anonimización: si falla, **no se debería exportar** ese resultado (Sprint 7 tiene que verificar explícitamente que la entrevista pasó por anonimización antes de permitir exportar) — a diferenciar claramente de un fallo en corrección/resumen, que sí puede degradarse con gracia.
 
-## Arquitectura del job (decisión 2026-07-28)
+## Arquitectura del job — pregunta abierta
 
-Las tres fases corren dentro del mismo `execute()` de `InterviewProcessingJobHandler`, extendiéndolo — mismo patrón que Sprint 5 extendió el stub de Sprint 4, sin agregar tipos de job ni endpoints nuevos. Se descartó separar en fases/jobs propios (que habilitaría, por ejemplo, re-anonimizar con otro modelo sin re-transcribir) por ahora: es complejidad que nadie necesita todavía — mismo criterio que ya se aplicó para no agregar el estado `transcribed` intermedio en Sprint 5. Si en el futuro aparece una necesidad real de re-ejecutar una fase sola, se separa en ese momento.
+¿Estas fases corren todas dentro del mismo `execute()` de `InterviewProcessingJobHandler` (extendiéndolo, como Sprint 5 extendió el stub de Sprint 4), o se separan en jobs/fases propias (permitiendo, por ejemplo, re-anonimizar con otro modelo sin re-transcribir)? Mismo tipo de decisión que ya se tomó deliberadamente **no** resolver en Sprint 5 (no se agregó el estado `transcribed` intermedio porque nada lo consumía todavía) — ahora sí hay un consumidor real (Sprint 6), así que vale la pena reabrir esa decisión antes de implementar.
 
 # Why it matters
 
