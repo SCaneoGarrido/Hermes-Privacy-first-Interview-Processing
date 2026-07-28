@@ -122,6 +122,10 @@ void DatabaseManager::migrateTables(const std::string& sqlFilePath) {
 
 // Implementación del Wrapper para Prepared Statements seguros (Evita Inyección SQL)
 std::optional<uint64_t> DatabaseManager::executePrepared(const std::string& query, const std::vector<SqlParam>& params, bool return_id) {
+    // Serializa el acceso a la unica conexion MYSQL*: ver comentario en
+    // DatabaseManager.h sobre por que esto es necesario con Crow multithreaded.
+    std::lock_guard<std::mutex> lock(m_dbMutex);
+
     std::unique_ptr<MYSQL_STMT, StmtDeleter> stmt(mysql_stmt_init(connection.get()));
     if (!stmt) return std::nullopt;
 
@@ -180,9 +184,13 @@ std::optional<uint64_t> DatabaseManager::executePrepared(const std::string& quer
 }
 
 std::vector<std::vector<SqlParam>> DatabaseManager::executeQuery(
-    const std::string& query, 
+    const std::string& query,
     const std::vector<SqlParam>& params
 ) {
+    // Serializa el acceso a la unica conexion MYSQL*: ver comentario en
+    // DatabaseManager.h sobre por que esto es necesario con Crow multithreaded.
+    std::lock_guard<std::mutex> lock(m_dbMutex);
+
     std::vector<std::vector<SqlParam>> filas_resultado;
 
     // 1. Inicializar y preparar el Statement

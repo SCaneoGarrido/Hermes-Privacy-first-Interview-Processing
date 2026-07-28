@@ -2,6 +2,7 @@
 #include <mysql.h>
 #include <string>
 #include <memory>
+#include <mutex>
 #include <stdexcept>
 #include <variant>
 #include <vector>
@@ -39,6 +40,15 @@ class DatabaseManager {
 
         // Puntero inteligente que maneja el ciclo de vida de la conexion
         std::unique_ptr<MYSQL, MysqlDeleter> connection;
+
+        // MYSQL* no es thread-safe para ejecuciones concurrentes sobre la
+        // misma conexion. DatabaseManager es un singleton con una unica
+        // conexion y Crow corre en modo .multithreaded(): sin este mutex,
+        // dos requests concurrentes (o un worker thread de Sprint 4 en
+        // paralelo con un request) corrompen resultados o crashean el
+        // cliente MySQL. Una connection pool seria mas performante pero es
+        // complejidad que este proyecto no necesita todavia.
+        std::mutex m_dbMutex;
 
     public:
         DatabaseManager();

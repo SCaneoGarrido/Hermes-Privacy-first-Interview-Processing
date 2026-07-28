@@ -10,6 +10,10 @@
 #include "api/include/Health.h"
 #include "api/include/logger.h"
 #include "api/include/ApiResponse.h"
+#include "jobs/include/JobQueue.h"
+#include "jobs/include/InterviewJobRepository.h"
+#include "jobs/include/InterviewProcessingJobHandler.h"
+#include "jobs/include/WorkerPool.h"
 
 #include <cstdlib>
 #include <iostream>
@@ -49,9 +53,23 @@ int main()
     // Composition root: controllers dependen solo de InterviewService, que a
     // su vez depende solo de IInterviewRepository (ver .ai/PROJECT.md,
     // Filosofia de Repositorios). DatabaseManager queda aislado dentro de
-    // MySqlInterviewRepository.
+    // MySqlInterviewRepository y hermes::jobs::InterviewJobRepository.
     MySqlInterviewRepository    interviewRepository(DatabaseManager::getInstance());
-    InterviewService             interviewService(interviewRepository);
+
+    // Sprint 4 - Background Processing: cola de trabajos + worker threads.
+    // Cualquier job que haya quedado 'running' de una corrida anterior murio
+    // a mitad de proceso (el backend se reinicio); se reclama como failed
+    // antes de aceptar trabajo nuevo, si no la entrevista queda bloqueada
+    // para siempre.
+    hermes::jobs::InterviewJobRepository        jobRepository(DatabaseManager::getInstance());
+    jobRepository.reclaimStuckJobs();
+
+    hermes::jobs::JobQueue                      jobQueue;
+    hermes::jobs::InterviewProcessingJobHandler jobHandler;
+    const int workerPoolSize = std::stoi(env_or("WORKER_POOL_SIZE", "1"));
+    hermes::jobs::WorkerPool                    workerPool(jobQueue, jobHandler, jobRepository, workerPoolSize);
+
+    InterviewService             interviewService(interviewRepository, jobRepository, jobQueue);
     FileController               fileController(interviewService);
     InterviewController          interviewController(interviewService);
     // ==== Define route for service health check

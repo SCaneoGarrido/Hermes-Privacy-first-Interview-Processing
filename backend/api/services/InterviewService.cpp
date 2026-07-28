@@ -4,7 +4,10 @@
 #include <filesystem>
 #include <system_error>
 
-InterviewService::InterviewService(IInterviewRepository& repository) : m_repository(repository) {}
+InterviewService::InterviewService(IInterviewRepository& repository,
+                                    hermes::jobs::IInterviewJobRepository& jobRepository,
+                                    hermes::jobs::IJobQueue& jobQueue)
+    : m_repository(repository), m_jobRepository(jobRepository), m_jobQueue(jobQueue) {}
 
 std::optional<int> InterviewService::createInterview(const std::string& date, const std::string& type, const std::string& subjectType) {
     return m_repository.create(date, type, subjectType);
@@ -36,10 +39,21 @@ ProcessOutcome InterviewService::requestProcessing(int id) {
         return ProcessOutcome::AudioRequired;
     }
 
+    if (m_jobRepository.hasActiveJob(id)) {
+        return ProcessOutcome::AlreadyQueued;
+    }
+
+    if (!m_jobRepository.createPending(id).has_value()) {
+        log_event("[InterviewService][requestProcessing] Fallo creando el job pending, id=" + std::to_string(id));
+        return ProcessOutcome::Failed;
+    }
+
     if (!m_repository.updateStatus(id, "processing")) {
         log_event("[InterviewService][requestProcessing] Fallo actualizando el estado a processing, id=" + std::to_string(id));
         return ProcessOutcome::Failed;
     }
+
+    m_jobQueue.enqueue(hermes::jobs::Job{id});
 
     return ProcessOutcome::Ok;
 }

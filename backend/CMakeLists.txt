@@ -31,6 +31,10 @@ add_executable(backend
                 api/shared/database/MySqlInterviewRepository.cpp
                 api/helpers/fileController.helper.cpp
                 api/helpers/interviewController.helper.cpp
+                jobs/src/JobQueue.cpp
+                jobs/src/WorkerPool.cpp
+                jobs/src/InterviewJobRepository.cpp
+                jobs/src/InterviewProcessingJobHandler.cpp
             )
 
 target_compile_features(backend PRIVATE cxx_std_20)

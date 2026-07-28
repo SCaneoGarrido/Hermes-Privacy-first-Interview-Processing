@@ -114,6 +114,9 @@ crow::response InterviewController::processInterview(int id) {
             case ProcessOutcome::AudioRequired:
                 return ApiResponse::failure(409, "AUDIO_REQUIRED", "La entrevista todavia no tiene un audio asociado");
 
+            case ProcessOutcome::AlreadyQueued:
+                return ApiResponse::failure(409, "JOB_ALREADY_QUEUED", "Ya hay un procesamiento en curso para esta entrevista");
+
             case ProcessOutcome::Failed:
                 return ApiResponse::failure(500, "INTERNAL_SERVER_ERROR", "Error actualizando el estado de la entrevista");
 

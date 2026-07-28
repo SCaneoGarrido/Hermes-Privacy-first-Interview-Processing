@@ -74,3 +74,28 @@ CREATE TABLE IF NOT EXISTS interview_results (
         ON DELETE CASCADE
         ON UPDATE CASCADE
 ) ENGINE=InnoDB;
+
+-- ------------------------------------------------------------
+-- Tabla: interview_jobs (Sprint 4 - Background Processing)
+-- Un intento de procesamiento (Whisper/Ollama) por fila. A diferencia de
+-- interviews_audio / interview_results, interview_id NO es UNIQUE aca:
+-- una entrevista puede reintentarse tras un failed, y eso crea una fila
+-- nueva (no un update de la vieja), sirviendo de historial/auditoria.
+-- interviews.status sigue siendo el estado "grueso" que consume el
+-- frontend: esta tabla es el detalle fino por intento.
+-- ------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS interview_jobs (
+    id              INT AUTO_INCREMENT PRIMARY KEY,
+    interview_id    INT          NOT NULL,
+    -- pending | running | completed | failed
+    status          VARCHAR(20)  NOT NULL DEFAULT 'pending',
+    error_message   VARCHAR(500) NULL,
+    started_at      DATETIME     NULL,
+    finished_at     DATETIME     NULL,
+    created_at      TIMESTAMP    DEFAULT CURRENT_TIMESTAMP,
+    updated_at      TIMESTAMP    DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+
+    CONSTRAINT fk_interview_jobs_interview
+        FOREIGN KEY (interview_id) REFERENCES interviews(id)
+        ON DELETE CASCADE ON UPDATE CASCADE
+) ENGINE=InnoDB;
