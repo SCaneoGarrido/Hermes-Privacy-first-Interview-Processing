@@ -33,6 +33,7 @@ Mapa de contenido de las secciones [[02 Architecture]] y [[03 ADR]]: la arquitec
 - [[ADR-010 - Docker Compose para MySQL Local]]
 - [[ADR-011 - Contrato de Respuesta API Uniforme]]
 - [[ADR-012 - Repository y Service Layer para Entrevistas]]
+- [[ADR-013 - Versionado de API]]
 
 **Patrones relacionados**
 - [[Filosofia de Repositorios]] (01 Project) — cumplida desde [[ADR-012 - Repository y Service Layer para Entrevistas]] (2026-07-28): los controllers ya no acceden a `DatabaseManager` directamente

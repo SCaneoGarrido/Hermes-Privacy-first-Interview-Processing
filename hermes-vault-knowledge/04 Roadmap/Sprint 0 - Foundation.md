@@ -28,7 +28,7 @@ Preparar completamente el entorno de desarrollo de Hermes.
 - Primer endpoint REST (`GET /health`)
 - Documentación inicial (`docs/`, `.ai/`, esta bóveda)
 
-**Endpoints:** implementado como `GET /health` (no `GET /api/v1/health` como decía el plan original — el prefijo `/api/v1` nunca se adoptó; los endpoints reales son rutas planas: `/health`, `/upload`, `/file/<id>`, `/interview`, `/interviews`, `/interview/<id>`, `/interview/<id>/process`). `GET /api/v1/info` nunca se implementó.
+**Endpoints:** implementado inicialmente como rutas planas (`/health`, `/upload`, `/file/<id>`, `/interview`, `/interviews`, `/interview/<id>`, `/interview/<id>/process`), sin el prefijo `/api/v1` que proponía el plan original. Corregido el 2026-07-28: todas las rutas pasaron a `/api/v1/...` — ver [[ADR-013 - Versionado de API]]. `GET /api/v1/info` nunca se implementó.
 
 # Why it matters
 

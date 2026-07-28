@@ -38,7 +38,7 @@ Secuencia de sprints:
 | # | Sprint | Estado | Nota |
 |---|--------|--------|------|
 | 0 | [[Sprint 0 - Foundation]] | ✅ done | Entorno, CMake/vcpkg, Crow, MySQL, logging, `/health` |
-| 1 | [[Sprint 1 - Core API]] | 🟡 draft | Controllers existen; sin capa Services formal ni versionado `/api/v1` |
+| 1 | [[Sprint 1 - Core API]] | 🟠 in-progress | Services/Repositories y versionado `/api/v1` ya resueltos ([[ADR-012 - Repository y Service Layer para Entrevistas]], [[ADR-013 - Versionado de API]]); falta endpoint Configuration y DTOs formales |
 | 2 | [[Sprint 2 - Persistence]] | ✅ done | CRUD completo (incl. `DELETE`) + `IInterviewRepository`/`InterviewService` ([[ADR-012 - Repository y Service Layer para Entrevistas]]) |
 | 3 | [[Sprint 3 - File Upload]] | 🟠 in-progress | Upload + validación de firma de bytes; falta progreso de subida (depende de Sprint 4) |
 | 4 | [[Sprint 4 - Background Processing]] | ⚪ draft | No iniciado — sin cola de trabajos ni worker threads |

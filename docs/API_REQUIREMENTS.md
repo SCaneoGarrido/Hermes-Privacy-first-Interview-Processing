@@ -10,6 +10,10 @@ forma, el `CROW_CATCHALL_ROUTE` sigue devolviendo
 `{"success":false,"error":{"code":"NOT_FOUND",...}}` en vez de romper la UI
 en silencio.
 
+**Todas las rutas del backend están versionadas bajo el prefijo `/api/v1`**
+(`backend/main.cpp`, adoptado 2026-07-28 — ver ADR-013 en `.ai/DECISIONS.md`).
+Los encabezados de esta sección muestran el path real, ya con el prefijo.
+
 Todas las respuestas siguen el contrato ya definido en
 `backend/api/rules/contract.md`:
 
@@ -25,10 +29,10 @@ Todas las respuestas siguen el contrato ya definido en
 
 ## 1. Endpoints implementados
 
-### `GET /health`
+### `GET /api/v1/health`
 Se usa para el indicador de estado del backend en el header del frontend.
 
-### `POST /interview`
+### `POST /api/v1/interview`
 Crea una entrevista. Body:
 ```json
 { "date": "2026-07-28 10:00:00", "type": "tecnica", "subject_type": "candidato" }
@@ -39,7 +43,7 @@ delega en `InterviewService::createInterview`, que usa
 llama a `DatabaseManager::executePrepared(..., /*return_id=*/true)` →
 `mysql_stmt_insert_id`). Ver ADR-012 en `.ai/DECISIONS.md`.
 
-### `POST /upload`
+### `POST /api/v1/upload`
 Sube un audio y lo asocia a una entrevista. Requiere:
 - Multipart con campo `file` (mp3/wav/ogg/m4a), validado contra la firma real
   de bytes del archivo (no solo el `Content-Type` declarado — ver
@@ -49,7 +53,7 @@ Sube un audio y lo asocia a una entrevista. Requiere:
 Responde `data: { "filename", "path", "code": "ACCEPTED" }`. Al guardar el
 audio, además actualiza `interviews.status` a `pending_processing`.
 
-### `GET /interviews` — listado
+### `GET /api/v1/interviews` — listado
 `InterviewController::getInterviews`. Devuelve un array leyendo la columna
 `status` directamente (ver sección 2):
 
@@ -70,7 +74,7 @@ audio, además actualiza `interviews.status` a `pending_processing`.
 }
 ```
 
-### `GET /interview/:id` — detalle
+### `GET /api/v1/interview/:id` — detalle
 `InterviewController::getInterview`. Devuelve la entrevista con su audio y
 resultado si existen (`null` si no, coherente con el `UNIQUE(interview_id)`
 de `SQL/init.sql`):
@@ -92,7 +96,7 @@ de `SQL/init.sql`):
 ```
 `404 NOT_FOUND` si el id no existe.
 
-### `POST /interview/:id/process` — disparar transcripción
+### `POST /api/v1/interview/:id/process` — disparar transcripción
 `InterviewController::processInterview`. Botón "Enviar a procesar" de la UI:
 1. `404 NOT_FOUND` si el id no existe.
 2. `409 AUDIO_REQUIRED` si la entrevista todavía no tiene audio asociado.
@@ -110,7 +114,7 @@ integración. `TranscriptionController` (esqueleto en
 implementación ni ruta registrada — es de ahí, no de `InterviewController`,
 de donde debería salir la transcripción real cuando se construya.
 
-### `DELETE /interview/:id`
+### `DELETE /api/v1/interview/:id`
 `InterviewController::deleteInterview`, vía `InterviewService::removeInterview`:
 1. `404 NOT_FOUND` si el id no existe.
 2. Si existe, borra la fila de `interviews`. `interviews_audio` e
@@ -156,8 +160,9 @@ a punta.
 
 El frontend en desarrollo corre en `http://localhost:5173` (Vite) y el
 backend en `http://localhost:18080`. El `vite.config.ts` del frontend define
-un **proxy**: toda request a `/api/*` se reenvía a
-`http://localhost:18080/*` (sin el prefijo `/api`). Como el navegador ve
+un **proxy**: toda request a `/api/*` se reenvía tal cual (sin reescribir el
+path) a `http://localhost:18080/*`. Como el backend ya expone sus rutas bajo
+ese mismo prefijo `/api/v1/...`, el path llega intacto. Como el navegador ve
 todo como el mismo origen, esto evita CORS por completo en desarrollo — no
 requiere ningún cambio en el backend.
 
@@ -187,6 +192,7 @@ sin implementar, no bloquea nada en desarrollo**):
 | 7 | CORS | pendiente, solo si se despliega fuera del proxy de Vite |
 | 8 | `DELETE /interview/:id` | ✅ (borra fila + cascada + archivo de audio en disco) |
 | 9 | Controllers sin acceso directo a `DatabaseManager` | ✅ (`IInterviewRepository` + `InterviewService`, ADR-012) |
+| 10 | Versionado de API (`/api/v1` prefix) | ✅ (ADR-013; frontend y proxy de Vite actualizados en el mismo cambio) |
 
 El flujo completo — crear entrevista, ver el id, subir audio, ver el detalle
 con el audio asociado, disparar "procesar", eliminarla y ver el estado

@@ -21,8 +21,10 @@ interface ApiEnvelope<T> {
   error: { code: string; message: string } | null;
 }
 
-// Prefijo fijo: Vite lo reescribe hacia el backend real en dev (ver vite.config.ts).
-const BASE_URL = "/api";
+// El backend expone todas las rutas bajo /api/v1 (ver backend/main.cpp).
+// Vite reenvia /api/* sin reescribir el path en dev (ver vite.config.ts),
+// asi que este prefijo llega tal cual al backend real.
+const BASE_URL = "/api/v1";
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   let response: Response;

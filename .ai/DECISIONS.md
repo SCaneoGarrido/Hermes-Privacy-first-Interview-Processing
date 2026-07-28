@@ -167,3 +167,17 @@ Introduce `IInterviewRepository` (implemented by `MySqlInterviewRepository`) and
 Reason
 
 Closes the deviation from the Repository Philosophy accepted during Sprint 2 ("move fast on the create -> upload -> process flow first, add the interface later") before Sprint 4 (Background Processing) introduces worker threads and more call sites -- retrofitting the abstraction later, with more code touching the database, would have been more expensive. `InterviewService` has no dependency on Crow or MySQL, keeping business rules (e.g. audio required before processing, deleting the on-disk audio file when an interview is removed) out of both the controller and the repository.
+
+---
+
+## ADR-013
+
+API Versioning
+
+Decision
+
+Prefix every backend route with `/api/v1` (e.g. `/api/v1/interviews`, `/api/v1/interview/:id`). `frontend/src/api/client.ts` now builds requests against `BASE_URL = "/api/v1"`, and the Vite dev proxy (`frontend/vite.config.ts`) forwards `/api/*` to the backend without rewriting the path, since the backend already serves that exact prefix.
+
+Reason
+
+Sprint 1 - Core API originally called for versioning the API from that sprint onward, but it was deliberately deferred (see Sprint 2 - Persistence discussion) to keep the create -> upload -> process flow moving. Adopted now, alongside the repository/service cleanup of ADR-012, while the route surface is still small. Without updating the frontend `BASE_URL` and the Vite proxy rewrite in the same change, every frontend request would 404 against the newly prefixed backend routes -- both were changed together here.
