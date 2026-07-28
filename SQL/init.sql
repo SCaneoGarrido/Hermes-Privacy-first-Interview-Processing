@@ -85,17 +85,26 @@ CREATE TABLE IF NOT EXISTS interview_results (
 -- frontend: esta tabla es el detalle fino por intento.
 -- ------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS interview_jobs (
-    id              INT AUTO_INCREMENT PRIMARY KEY,
-    interview_id    INT          NOT NULL,
+    id                    INT AUTO_INCREMENT PRIMARY KEY,
+    interview_id          INT          NOT NULL,
     -- pending | running | completed | failed
-    status          VARCHAR(20)  NOT NULL DEFAULT 'pending',
-    error_message   VARCHAR(500) NULL,
-    started_at      DATETIME     NULL,
-    finished_at     DATETIME     NULL,
-    created_at      TIMESTAMP    DEFAULT CURRENT_TIMESTAMP,
-    updated_at      TIMESTAMP    DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    status                VARCHAR(20)  NOT NULL DEFAULT 'pending',
+    error_message         VARCHAR(500) NULL,
+    -- Ruta al JSON crudo de whisper.cpp (segmentos + timestamps), Sprint 5.
+    -- Es la entrada que Sprint 6 (Ollama) va a leer para la diarizacion.
+    raw_transcript_path   VARCHAR(500) NULL,
+    started_at            DATETIME     NULL,
+    finished_at           DATETIME     NULL,
+    created_at            TIMESTAMP    DEFAULT CURRENT_TIMESTAMP,
+    updated_at            TIMESTAMP    DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
 
     CONSTRAINT fk_interview_jobs_interview
         FOREIGN KEY (interview_id) REFERENCES interviews(id)
         ON DELETE CASCADE ON UPDATE CASCADE
 ) ENGINE=InnoDB;
+
+-- Idempotente: ver comentario de ALTER TABLE interviews mas arriba sobre por
+-- que DatabaseManager::migrateTables tolera el error 1060 (columna ya existe).
+ALTER TABLE interview_jobs
+    ADD COLUMN raw_transcript_path VARCHAR(500) NULL
+    AFTER error_message;

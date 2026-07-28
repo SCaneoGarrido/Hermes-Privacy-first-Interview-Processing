@@ -15,6 +15,7 @@ class InterviewJobRepository : public IInterviewJobRepository {
         bool hasActiveJob(int interviewId) override;
         std::optional<int> createPending(int interviewId) override;
         bool markRunning(int interviewId) override;
+        bool saveRawTranscriptPath(int interviewId, const std::string& path) override;
         bool markCompleted(int interviewId) override;
         bool markFailed(int interviewId, const std::string& errorMessage) override;
         int reclaimStuckJobs() override;

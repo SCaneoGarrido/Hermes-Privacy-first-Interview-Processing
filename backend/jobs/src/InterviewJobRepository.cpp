@@ -42,6 +42,20 @@ bool InterviewJobRepository::markRunning(int interviewId) {
     return result.has_value();
 }
 
+bool InterviewJobRepository::saveRawTranscriptPath(int interviewId, const std::string& path) {
+    auto jobId = findJobId(interviewId, "running");
+    if (!jobId.has_value()) {
+        log_event("[InterviewJobRepository][saveRawTranscriptPath] No hay job running para interview_id=" + std::to_string(interviewId));
+        return false;
+    }
+
+    std::vector<SqlParam> params = {path, jobId.value()};
+    auto result = m_db.executePrepared(
+        "UPDATE interview_jobs SET raw_transcript_path = ? WHERE id = ?",
+        params);
+    return result.has_value();
+}
+
 bool InterviewJobRepository::markCompleted(int interviewId) {
     auto jobId = findJobId(interviewId, "running");
     if (!jobId.has_value()) {

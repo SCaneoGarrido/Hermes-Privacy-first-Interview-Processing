@@ -14,6 +14,9 @@
 #include "jobs/include/InterviewJobRepository.h"
 #include "jobs/include/InterviewProcessingJobHandler.h"
 #include "jobs/include/WorkerPool.h"
+#include "audio/include/FfmpegAudioNormalizer.h"
+#include "transcription/include/WhisperTranscriber.h"
+#include "api/include/Constanst.h"
 
 #include <cstdlib>
 #include <iostream>
@@ -65,7 +68,23 @@ int main()
     jobRepository.reclaimStuckJobs();
 
     hermes::jobs::JobQueue                      jobQueue;
-    hermes::jobs::InterviewProcessingJobHandler jobHandler;
+
+    // Sprint 5 - Whisper Integration: normalizacion (FFmpeg estatico, ver
+    // ADR-014) + transcripcion (whisper.cpp). WhisperTranscriber no carga
+    // el modelo aca -- lo hace perezosamente en el primer transcribe(), asi
+    // el backend arranca igual aunque el modelo todavia no este en disco
+    // (ver whisper.cpp Architecture en la vault).
+    // Idioma fijo por defecto (no "auto"): la mayoria de las entrevistas de
+    // Hermes son en espanol, y "auto" agrega una pasada extra de deteccion
+    // que ademas es poco confiable en clips cortos/ruidosos (ver whisper.cpp
+    // Architecture, Common Mistakes). Configurable por si alguna entrevista
+    // puntual es en otro idioma.
+    hermes::audio::FfmpegAudioNormalizer        audioNormalizer;
+    hermes::transcription::WhisperTranscriber   transcriber(
+        env_or("WHISPER_MODEL_PATH", std::string(Config::DEFAULT_WHISPER_MODEL_PATH)),
+        env_or("WHISPER_LANGUAGE", "es"));
+
+    hermes::jobs::InterviewProcessingJobHandler jobHandler(interviewRepository, jobRepository, audioNormalizer, transcriber);
     const int workerPoolSize = std::stoi(env_or("WORKER_POOL_SIZE", "1"));
     hermes::jobs::WorkerPool                    workerPool(jobQueue, jobHandler, jobRepository, workerPoolSize);
 

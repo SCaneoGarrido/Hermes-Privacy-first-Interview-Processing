@@ -2,6 +2,13 @@
   "dependencies": [
     "crow",
     "boost-uuid",
-    "libmariadb"
+    "libmariadb",
+    "whisper-cpp",
+    {
+      "name": "ffmpeg",
+      "default-features": false,
+      "features": ["avcodec", "avformat", "swresample"]
+    },
+    "nlohmann-json"
   ]
 }

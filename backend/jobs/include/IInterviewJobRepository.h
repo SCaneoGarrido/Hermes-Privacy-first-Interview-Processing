@@ -26,6 +26,13 @@ class IInterviewJobRepository {
         virtual std::optional<int> createPending(int interviewId) = 0;
 
         virtual bool markRunning(int interviewId) = 0;
+
+        // Guarda la ruta del JSON crudo de whisper.cpp (Sprint 5) en el job
+        // 'running' de esta entrevista. No cambia el status: es metadata de
+        // auditoria/handoff hacia Sprint 6, no un paso de la maquina de
+        // estados pending/running/completed/failed.
+        virtual bool saveRawTranscriptPath(int interviewId, const std::string& path) = 0;
+
         // Tambien actualiza interviews.status a 'completed'.
         virtual bool markCompleted(int interviewId) = 0;
         // Tambien actualiza interviews.status a 'failed'.

@@ -17,6 +17,7 @@ class MySqlInterviewRepository : public IInterviewRepository {
         std::optional<std::string> findTranscriptionPathByInterviewId(int id) override;
         bool updateStatus(int id, const std::string& status) override;
         bool insertAudio(int interviewId, const std::string& path, const std::string& format, long long size) override;
+        bool upsertTranscriptionResult(int interviewId, const std::string& path) override;
         bool remove(int id) override;
 
     private:

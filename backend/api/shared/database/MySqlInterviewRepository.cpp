@@ -130,6 +130,17 @@ bool MySqlInterviewRepository::insertAudio(int interviewId, const std::string& p
     return result.has_value();
 }
 
+bool MySqlInterviewRepository::upsertTranscriptionResult(int interviewId, const std::string& path) {
+    std::string query =
+        "INSERT INTO interview_results (interview_transcription_file_path, interview_id, created_at) "
+        "VALUES (?, ?, NOW()) "
+        "ON DUPLICATE KEY UPDATE interview_transcription_file_path = VALUES(interview_transcription_file_path)";
+    std::vector<SqlParam> params = {path, interviewId};
+
+    auto result = m_db.executePrepared(query, params);
+    return result.has_value();
+}
+
 bool MySqlInterviewRepository::remove(int id) {
     std::vector<SqlParam> idParam = {id};
     auto result = m_db.executePrepared("DELETE FROM interviews WHERE id = ?", idParam);

@@ -73,6 +73,10 @@ Testing/
 /backend/.claude
 /backend/working_bit.txt
 /backend/uploads
+# Modelos de whisper.cpp (~150MB+): se descargan a mano, ver whisper.cpp
+# Architecture en la vault. Artefactos generados por el pipeline (Sprint 5+).
+/backend/models
+/backend/storage
 .claude
 
 # Archivos de caché de IntelliSense y VS Code

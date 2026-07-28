@@ -42,7 +42,7 @@ Secuencia de sprints:
 | 2 | [[Sprint 2 - Persistence]] | ✅ done | CRUD completo (incl. `DELETE`) + `IInterviewRepository`/`InterviewService` ([[ADR-012 - Repository y Service Layer para Entrevistas]]) |
 | 3 | [[Sprint 3 - File Upload]] | 🟠 in-progress | Upload + validación de firma de bytes; falta progreso de subida (depende de Sprint 4) |
 | 4 | [[Sprint 4 - Background Processing]] | ⚪ draft | No iniciado — sin cola de trabajos ni worker threads |
-| 5 | [[Sprint 5 - Whisper Integration]] | ⚪ draft | No iniciado — `transcriptionController.h` es solo esqueleto |
+| 5 | [[Sprint 5 - Whisper Integration]] | ✅ done | Implementado y verificado end-to-end 2026-07-28 (audio real → whisper.cpp → JSON + TXT, `interviews.status = completed`). `transcriptionController.h` sigue sin usarse (la transcripción corre dentro de `InterviewProcessingJobHandler`, no por un endpoint propio) |
 | 6 | [[Sprint 6 - Ollama Integration]] | ⚪ draft | No iniciado |
 | 7 | [[Sprint 7 - Export]] | ⚪ draft | No iniciado |
 | 8 | [[Sprint 8 - Frontend]] | 🟠 in-progress | Adelantado fuera de orden; falta progreso real, descargas y configuración |
