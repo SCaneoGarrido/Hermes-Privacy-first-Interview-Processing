@@ -55,38 +55,38 @@ int main()
     FileController               fileController(interviewService);
     InterviewController          interviewController(interviewService);
     // ==== Define route for service health check
-    CROW_ROUTE(app, "/health")([&health](const crow::request& req) {
+    CROW_ROUTE(app, "/api/v1/health")([&health](const crow::request& req) {
         return health.healthCheck(req);
     });
 
     // ==== Define routes for file upload and file info retrieval
-    CROW_ROUTE(app, "/upload").methods(crow::HTTPMethod::POST).CROW_MIDDLEWARES(app, FileFormatGuard, HeaderIdGuard)([&fileController, &app](const crow::request& req) {
+    CROW_ROUTE(app, "/api/v1/upload").methods(crow::HTTPMethod::POST).CROW_MIDDLEWARES(app, FileFormatGuard, HeaderIdGuard)([&fileController, &app](const crow::request& req) {
         auto& ctx = app.get_context<HeaderIdGuard>(req);
         return fileController.handleFileUpload(req, ctx.interview_id);
     });
 
-    CROW_ROUTE(app, "/file/<string>").CROW_MIDDLEWARES(app, FileFormatGuard)([&fileController](const std::string& file_id) {
+    CROW_ROUTE(app, "/api/v1/file/<string>").CROW_MIDDLEWARES(app, FileFormatGuard)([&fileController](const std::string& file_id) {
         return fileController.getFileInfo(file_id);
     });
 
     // ==== Define routes for interview logic
-    CROW_ROUTE(app, "/interview").methods(crow::HTTPMethod::POST).CROW_MIDDLEWARES(app, InterviewGuard)([&interviewController](const crow::request& req) {
+    CROW_ROUTE(app, "/api/v1/interview").methods(crow::HTTPMethod::POST).CROW_MIDDLEWARES(app, InterviewGuard)([&interviewController](const crow::request& req) {
         return interviewController.handleInterviewRegistration(req);
     });
 
-    CROW_ROUTE(app, "/interviews").methods(crow::HTTPMethod::GET)([&interviewController](const crow::request& req) {
+    CROW_ROUTE(app, "/api/v1/interviews").methods(crow::HTTPMethod::GET)([&interviewController](const crow::request& req) {
         return interviewController.getInterviews(req);
     });
 
-    CROW_ROUTE(app, "/interview/<int>").methods(crow::HTTPMethod::GET)([&interviewController](int id) {
+    CROW_ROUTE(app, "/api/v1/interview/<int>").methods(crow::HTTPMethod::GET)([&interviewController](int id) {
         return interviewController.getInterview(id);
     });
 
-    CROW_ROUTE(app, "/interview/<int>").methods(crow::HTTPMethod::Delete)([&interviewController](int id) {
+    CROW_ROUTE(app, "/api/v1/interview/<int>").methods(crow::HTTPMethod::Delete)([&interviewController](int id) {
         return interviewController.deleteInterview(id);
     });
 
-    CROW_ROUTE(app, "/interview/<int>/process").methods(crow::HTTPMethod::POST)([&interviewController](int id) {
+    CROW_ROUTE(app, "/api/v1/interview/<int>/process").methods(crow::HTTPMethod::POST)([&interviewController](int id) {
         return interviewController.processInterview(id);
     });
 
