@@ -4,7 +4,7 @@ aliases: ["Hermes Layered Architecture"]
 tags: [architecture, hermes]
 status: stable
 created: 2026-07-24
-updated: 2026-07-28
+updated: 2026-07-29
 source: .ai/ARCHITECTURE.md
 related: ["Clean Architecture", "Modular Monolith", "API First", "Filosofia de Repositorios", "ADR-008 - MySQL como Base de Datos"]
 ---
@@ -26,7 +26,7 @@ Domain
   ↓
 Infrastructure
   ↓
-whisper.cpp · MySQL · Ollama
+whisper.cpp · FFmpeg · MySQL · Ollama (via cpp-httplib)
 ```
 
 Cada flecha representa una dependencia permitida en una única dirección: una capa superior puede depender de una inferior, nunca al revés. `Infrastructure` es la única capa que conoce las tecnologías concretas (whisper.cpp, MySQL, Ollama); `Domain` y `Application` las desconocen por completo y solo ven interfaces (ver [[Filosofia de Repositorios]]).

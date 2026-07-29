@@ -18,8 +18,8 @@ Infrastructure
 
 ↓
 
-Whisper.cpp
+whisper.cpp (+ FFmpeg for audio normalization)
 
-SQLite
+MySQL (superseded SQLite, see ADR-008)
 
-Ollama
+Ollama (+ cpp-httplib as the HTTP client, see ADR-015)

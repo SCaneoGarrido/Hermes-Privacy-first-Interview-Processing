@@ -181,3 +181,31 @@ Prefix every backend route with `/api/v1` (e.g. `/api/v1/interviews`, `/api/v1/i
 Reason
 
 Sprint 1 - Core API originally called for versioning the API from that sprint onward, but it was deliberately deferred (see Sprint 2 - Persistence discussion) to keep the create -> upload -> process flow moving. Adopted now, alongside the repository/service cleanup of ADR-012, while the route surface is still small. Without updating the frontend `BASE_URL` and the Vite proxy rewrite in the same change, every frontend request would 404 against the newly prefixed backend routes -- both were changed together here.
+
+---
+
+## ADR-014
+
+Audio Normalization
+
+Decision
+
+FFmpeg (avcodec, avformat, swresample only -- no encoders, no GPL codecs), linked statically via vcpkg, wrapped behind `IAudioNormalizer`. Never invoked as an external `ffmpeg.exe` process.
+
+Reason
+
+whisper.cpp requires PCM 16-bit/16kHz/mono; Sprint 3 already accepts wav/ogg/m4a/mp3. Shelling out to a system `ffmpeg` binary would force every contributor to install and PATH it manually before they could even build the project -- the same build-friendliness criterion already applied in ADR-009. Static linking keeps "clone and `cmake --build`" true with zero extra manual steps. See `hermes-vault-knowledge/03 ADR/ADR-014 - FFmpeg Estatico via vcpkg para Normalizacion de Audio.md` for the platform gotchas found in practice (vcpkg's `FindFFmpeg.cmake` module, not namespaced targets; the `CMAKE_BUILD_TYPE` bug this exposed).
+
+---
+
+## ADR-015
+
+HTTP Client for Ollama
+
+Decision
+
+cpp-httplib (header-only, vcpkg, no TLS/compression features), wrapped behind `ILLMClient`/`OllamaClient`. Talks to Ollama's local REST API (`POST /api/chat`, `"stream": false`) over plain HTTP on `localhost`.
+
+Reason
+
+Crow is server-only; Sprint 6 needs an outbound HTTP client. cpp-httplib is header-only (near-zero build cost, unlike FFmpeg/whisper.cpp) and sufficient for a single blocking request at a time, matching the already-synchronous worker from Sprint 4. libcurl and Boost.Beast were considered and rejected as unnecessary complexity for local, TLS-free traffic. See `hermes-vault-knowledge/03 ADR/ADR-015 - cpp-httplib como Cliente HTTP para Ollama.md` for the MinGW build gotchas found in practice (`_WIN32_WINNT`, `CPPHTTPLIB_USE_NON_BLOCKING_GETADDRINFO`).

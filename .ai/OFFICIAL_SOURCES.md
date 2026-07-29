@@ -5,6 +5,11 @@ https://dev.mysql.com/doc/refman/en/
 https://mariadb.com/kb/en/mariadb-connector-c/
 https://docs.docker.com/
 https://github.com/ggml-org/whisper.cpp
+https://ffmpeg.org/
+https://ollama.com/
+https://github.com/ollama/ollama
+https://github.com/ollama/ollama/blob/main/docs/api.md
+https://github.com/yhirose/cpp-httplib
 https://react.dev/
 https://vitejs.dev/
 https://nodejs.org/docs/latest/api/

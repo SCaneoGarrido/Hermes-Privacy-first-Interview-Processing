@@ -7,8 +7,8 @@
 - [ ] Crow Routing
 - [ ] CMake Presets
 - [ ] MySQL Prepared Statements (libmariadb, MYSQL_BIND / std::variant param mapping)
-- [ ] whisper.cpp Architecture
-- [ ] Ollama API
+- [x] whisper.cpp Architecture -- see `hermes-vault-knowledge/08 AI/whisper.cpp Architecture.md`
+- [x] Ollama API -- see `hermes-vault-knowledge/08 AI/Ollama Integration Strategy.md`
 - [ ] React Query
 
 ## Medium Priority
