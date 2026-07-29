@@ -114,6 +114,26 @@ std::optional<std::string> MySqlInterviewRepository::findTranscriptionPathByInte
     return std::get<std::string>(rows[0][0]);
 }
 
+std::optional<std::string> MySqlInterviewRepository::findSummaryPathByInterviewId(int id) {
+    std::vector<SqlParam> idParam = {id};
+
+    auto rows = m_db.executeQuery(
+        "SELECT summary_file_path FROM interview_results WHERE interview_id = ?",
+        idParam);
+
+    if (rows.empty() || rows[0].size() != 1) {
+        return std::nullopt;
+    }
+
+    const std::string& path = std::get<std::string>(rows[0][0]);
+    if (path.empty()) {
+        // summary_file_path es NULL (Fase 3 no corrio o fallo) - DatabaseManager
+        // representa NULL como string vacio, ver executeQuery.
+        return std::nullopt;
+    }
+    return path;
+}
+
 bool MySqlInterviewRepository::updateStatus(int id, const std::string& status) {
     std::vector<SqlParam> params = {status, id};
     auto result = m_db.executePrepared("UPDATE interviews SET status = ? WHERE id = ?", params);
@@ -138,6 +158,14 @@ bool MySqlInterviewRepository::upsertTranscriptionResult(int interviewId, const 
     std::vector<SqlParam> params = {path, interviewId};
 
     auto result = m_db.executePrepared(query, params);
+    return result.has_value();
+}
+
+bool MySqlInterviewRepository::updateSummaryPath(int interviewId, const std::string& path) {
+    std::vector<SqlParam> params = {path, interviewId};
+    auto result = m_db.executePrepared(
+        "UPDATE interview_results SET summary_file_path = ? WHERE interview_id = ?",
+        params);
     return result.has_value();
 }
 

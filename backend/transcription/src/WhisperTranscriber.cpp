@@ -1,4 +1,5 @@
 #include "../include/WhisperTranscriber.h"
+#include "../../api/include/logger.h"
 
 #include <whisper.h>
 
@@ -88,6 +89,23 @@ struct WhisperContextDeleter {
         if (ctx) whisper_free(ctx);
     }
 };
+
+// Sin esto, un audio largo (la transcripcion de una entrevista real de
+// 70min tarda ~12 min) no deja ningun rastro en el log entre "Transcribiendo
+// con whisper.cpp" y el resultado final - parece trabado aunque este
+// funcionando. Se loguea cada 10% en vez de en cada llamada (whisper.cpp
+// invoca este callback muy seguido).
+struct ProgressLogState {
+    int lastLoggedPercent = -1;
+};
+
+void logWhisperProgress(struct whisper_context* /*ctx*/, struct whisper_state* /*state*/, int progress, void* user_data) {
+    auto* logState = static_cast<ProgressLogState*>(user_data);
+    if (progress - logState->lastLoggedPercent >= 10 || progress == 100) {
+        log_event("[WhisperTranscriber][transcribe] Progreso: " + std::to_string(progress) + "%");
+        logState->lastLoggedPercent = progress;
+    }
+}
 
 // whisper.cpp decodifica por token BPE, no por caracter: en audio largo/
 // ruidoso (o con modelos chicos como ggml-tiny) puede emitir un token cuyos
@@ -193,6 +211,10 @@ std::vector<TranscriptSegment> WhisperTranscriber::transcribe(const std::string&
     // No conviene paralelizar de mas en una laptop de researcher (mismo
     // criterio que WORKER_POOL_SIZE=1 por defecto en Sprint 4).
     params.n_threads = static_cast<int>(std::min(4u, std::thread::hardware_concurrency()));
+
+    ProgressLogState progressLogState;
+    params.progress_callback = logWhisperProgress;
+    params.progress_callback_user_data = &progressLogState;
 
     if (whisper_full(m_context, params, wav.samples.data(), static_cast<int>(wav.samples.size())) != 0) {
         throw std::runtime_error("whisper.cpp fallo al transcribir: " + audioPath);

@@ -9,6 +9,10 @@
       "default-features": false,
       "features": ["avcodec", "avformat", "swresample"]
     },
-    "nlohmann-json"
+    "nlohmann-json",
+    {
+      "name": "cpp-httplib",
+      "default-features": false
+    }
   ]
 }

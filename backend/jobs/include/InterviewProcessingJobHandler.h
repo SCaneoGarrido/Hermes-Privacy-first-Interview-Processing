@@ -5,24 +5,28 @@
 #include "../../api/include/repositories/IInterviewRepository.h"
 #include "../../audio/include/IAudioNormalizer.h"
 #include "../../transcription/include/ITranscriber.h"
+#include "../../llm/include/TranscriptEnhancer.h"
 
 namespace hermes::jobs {
 
-// Orquesta la Fase 1 del pipeline (Sprint 5, ver whisper.cpp Architecture
-// en la vault): normaliza el audio subido, lo transcribe, y guarda tanto
-// el JSON crudo (interview_jobs.raw_transcript_path, insumo de Sprint 6)
-// como un TXT plano sin diarizar (interview_results) para que la
-// entrevista tenga un resultado utilizable ya en este sprint, sin esperar
-// a que Ollama exista.
+// Orquesta el pipeline completo de procesamiento (Sprint 5 + Sprint 6, ver
+// whisper.cpp Architecture y Ollama Integration Strategy en la vault):
+// normaliza el audio, transcribe con whisper.cpp, guarda el JSON crudo
+// (interview_jobs.raw_transcript_path) y un TXT plano sin diarizar como
+// resultado utilizable de base (Sprint 5). Despues intenta mejorarlo con
+// Ollama (correccion + estructuracion por hablante, anonimizacion,
+// resumen) - si Ollama falla o no esta disponible, el resultado de Sprint
+// 5 sigue siendo el disponible: la ausencia de la mejora no tumba el job.
 //
-// No toca DatabaseManager ni whisper.cpp/FFmpeg directamente: todo pasa
-// por las interfaces inyectadas (Filosofia de Repositorios).
+// No toca DatabaseManager, whisper.cpp/FFmpeg, ni Ollama directamente:
+// todo pasa por las interfaces inyectadas (Filosofia de Repositorios).
 class InterviewProcessingJobHandler : public IJobHandler {
     public:
         InterviewProcessingJobHandler(IInterviewRepository& interviewRepository,
                                        IInterviewJobRepository& jobRepository,
                                        hermes::audio::IAudioNormalizer& audioNormalizer,
-                                       hermes::transcription::ITranscriber& transcriber);
+                                       hermes::transcription::ITranscriber& transcriber,
+                                       hermes::llm::TranscriptEnhancer& transcriptEnhancer);
 
         void execute(const Job& job) override;
 
@@ -31,6 +35,7 @@ class InterviewProcessingJobHandler : public IJobHandler {
         IInterviewJobRepository& m_jobRepository;
         hermes::audio::IAudioNormalizer& m_audioNormalizer;
         hermes::transcription::ITranscriber& m_transcriber;
+        hermes::llm::TranscriptEnhancer& m_transcriptEnhancer;
 };
 
 }  // namespace hermes::jobs

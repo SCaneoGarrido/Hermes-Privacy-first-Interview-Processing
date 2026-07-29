@@ -14,6 +14,12 @@ struct Job {
     // el contrato de IJobHandler cuando Sprint 5/6 agreguen mas tipos.
     std::string type = "interview_processing";
     std::chrono::system_clock::time_point createdAt = std::chrono::system_clock::now();
+    // Fase 3 de Sprint 6 (resumen) es opcional, a pedido explicito del
+    // usuario via POST /interview/:id/process - no es parte de lo que el
+    // programa espera por defecto (solo transcripcion + anonimizacion lo
+    // son), y agrega ~30% de llamadas a Ollama sobre el total. Default
+    // false: el researcher lo prende cuando lo quiere.
+    bool includeSummary = false;
 };
 
 }  // namespace hermes::jobs

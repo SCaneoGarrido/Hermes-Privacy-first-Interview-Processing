@@ -13,6 +13,15 @@ struct InterviewDetailRecord {
     InterviewRecord interview;
     std::optional<InterviewAudioRecord> audio;
     std::optional<std::string> transcriptionPath;
+    std::optional<std::string> summaryPath;
+    // Segundos entre started_at/finished_at del job mas reciente con ambos
+    // timestamps seteados (Sprint 6) - calculado, no una columna nueva
+    // (ver whisper.cpp Architecture, "Execution Time").
+    std::optional<long long> executionTimeSeconds;
+    // Paso grueso actual mientras hay un job 'running' (ver Job.h /
+    // IInterviewJobRepository::updateCurrentStep) - feedback de progreso
+    // para que la UI no parezca trabada en procesamientos largos.
+    std::optional<std::string> currentStep;
 };
 
 // AlreadyQueued: ya existe un job pending/running para esta entrevista
@@ -36,8 +45,10 @@ class InterviewService {
         std::optional<InterviewDetailRecord> getInterviewDetail(int id);
         // Valida existencia + audio + que no haya ya un job en curso: si
         // pasa, encola un job de procesamiento (Sprint 4) ademas de marcar
-        // la entrevista como processing.
-        ProcessOutcome requestProcessing(int id);
+        // la entrevista como processing. includeSummary: Fase 3 opcional de
+        // Sprint 6 (ver Job.h), default false - no es parte de lo que el
+        // programa espera por defecto.
+        ProcessOutcome requestProcessing(int id, bool includeSummary = false);
         RemoveOutcome removeInterview(int id);
         // Usado por FileController al recibir un audio: inserta el audio y
         // marca la entrevista como pending_processing. El fallo al

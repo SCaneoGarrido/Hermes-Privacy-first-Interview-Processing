@@ -24,11 +24,24 @@ export interface InterviewAudio {
 
 export interface InterviewResult {
   transcription_file_path: string;
+  summary_file_path: string | null;
 }
+
+// Pasos gruesos de current_step mientras status="processing" (ver
+// InterviewProcessingJobHandler en el backend). null si no hay un job
+// corriendo en este momento.
+export type ProcessingStep =
+  | "normalizando_audio"
+  | "transcribiendo"
+  | "corrigiendo_texto"
+  | "anonimizando"
+  | "generando_resumen";
 
 export interface InterviewDetail extends Interview {
   audio: InterviewAudio | null;
   result: InterviewResult | null;
+  execution_time_seconds: number | null;
+  current_step: ProcessingStep | null;
 }
 
 export interface CreateInterviewPayload {
@@ -51,6 +64,7 @@ export interface UploadAudioResponse {
 export interface ProcessInterviewResponse {
   id: number;
   status: InterviewStatus;
+  include_summary: boolean;
 }
 
 export interface DeleteInterviewResponse {

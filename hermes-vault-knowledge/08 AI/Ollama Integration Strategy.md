@@ -1,11 +1,11 @@
 ---
 title: Ollama Integration Strategy
 aliases: ["Sprint 6 Strategy", "LLM Pipeline", "OllamaClient Design"]
-tags: [ai, hermes, ollama, architecture, sprint6, draft]
-status: draft
+tags: [ai, hermes, ollama, architecture, sprint6]
+status: stable
 created: 2026-07-28
 updated: 2026-07-28
-source: Diseño de sesión (Claude Code, pre-implementación de Sprint 6, pendiente de aprobación humana) — informado por datos reales de Sprint 5 (entrevista real de ~70 min, 1804 segmentos)
+source: Diseño de sesión (Claude Code) + implementacion y verificacion a escala real el mismo dia (1804 segmentos, entrevista real de ~70 min)
 related: ["ADR-005 - Ollama como Motor LLM", "ADR-015 - cpp-httplib como Cliente HTTP para Ollama", "whisper.cpp Architecture", "Sprint 5 - Whisper Integration", "Sprint 6 - Ollama Integration", "Filosofia de Repositorios", "Privacy First"]
 ---
 
@@ -53,9 +53,17 @@ Lee `transcript_raw.json` (path guardado en `interview_jobs.raw_transcript_path`
 
 Esto es más trabajo de diseño que la Fase 1, pero es necesario: anonimizar bloque por bloque sin tabla compartida es una promesa de Privacy First que no se puede cumplir de forma confiable.
 
-## Fase 3 — Resúmenes
+## Fase 3 — Resúmenes (opcional, decisión 2026-07-29)
 
-Patrón *map-reduce* estándar: resumir cada bloque del transcript ya corregido (Fase 1) y anonimizado (Fase 2) — resumir después de anonimizar, no antes, para que el resumen mismo no filtre PII — y despues resumir el conjunto de resúmenes de bloque en un resumen final. Candidato a ser una acción bajo demanda (el usuario la pide desde el frontend) en vez de automática en el pipeline de `/process`, ya que no es indispensable para tener una entrevista "completa" y utilizable — a diferencia de la anonimización.
+Patrón *map-reduce* estándar: resumir cada bloque del transcript ya corregido (Fase 1) y anonimizado (Fase 2) — resumir después de anonimizar, no antes, para que el resumen mismo no filtre PII — y despues resumir el conjunto de resúmenes de bloque en un resumen final.
+
+**Confirmado por el owner del proyecto: el resumen no es un entregable esperado del programa** (a diferencia de lo que decía la fuente original en `Sprint 6 - Ollama Integration.md`) — solo la transcripción corregida y anonimizada lo es. Implementado como **opt-in explícito**:
+
+- `Job.includeSummary` (`backend/jobs/include/Job.h`), default `false`.
+- `POST /interview/:id/process` acepta body opcional `{"include_summary": true}` — sin body, JSON invalido, o el campo ausente, default `false` (no es un error de la request).
+- `TranscriptEnhancer::enhance(segments, includeSummary)` ni siquiera ejecuta la Fase 3 si `includeSummary` es `false` — no se gastan las llamadas a Ollama de esa fase (~30% del total de llamadas en la corrida real de 1804 segmentos).
+- Si no se pidió resumen, `interview_results.summary_file_path` queda `NULL` — es el caso normal, no un fallo.
+- Frontend: checkbox "Generar resumen" en la página de detalle de la entrevista, con aviso de que puede aumentar el tiempo de procesamiento en ~30% (relativo, no un tiempo fijo en minutos — la duración real depende del largo de la entrevista, que no se conoce hasta que termina de transcribir).
 
 ## Infraestructura compartida
 
@@ -66,6 +74,8 @@ Patrón *map-reduce* estándar: resumir cada bloque del transcript ya corregido 
 ## Manejo de errores y degradación
 
 Si Ollama no está corriendo, no tiene el modelo, o falla a mitad de las fases: el `transcript_final.txt` sin diarizar de Sprint 5 **debe seguir siendo el resultado disponible**, no bloquear la entrevista completa. Mismo criterio que la carga perezosa del modelo de whisper — la ausencia de una capacidad de IA no debería tumbar el pipeline entero, solo esa mejora puntual. Esto es más delicado con la anonimización: si falla, **no se debería exportar** ese resultado (Sprint 7 tiene que verificar explícitamente que la entrevista pasó por anonimización antes de permitir exportar) — a diferenciar claramente de un fallo en corrección/resumen, que sí puede degradarse con gracia.
+
+**Ampliación tras la prueba a escala real**: no alcanza con que la Fase 2 "no haya fallado" (sin excepción) para considerar una entrevista segura de exportar — el recall incompleto de entidades (ver Common Mistakes) significa que Ollama puede "completar exitosamente" la anonimización y aun así dejar PII real sin cubrir. Sprint 7 necesita más que un chequeo booleano de "¿corrió Ollama sin error?"; probablemente una advertencia explícita al usuario de que la anonimización automática no es infalible y amerita revisión antes de compartir el export.
 
 ## Arquitectura del job — pregunta abierta
 
@@ -84,13 +94,25 @@ La anonimización es el entregable de Hermes más directamente ligado a su propu
 
 # Common Mistakes
 
-- Asumir que la atribución de hablante por LLM sobre texto plano es diarización real — es una aproximación heurística, con errores esperables en diálogo rápido/interrumpido. Comunicarlo así al usuario.
+- Asumir que la atribución de hablante por LLM sobre texto plano es diarización real — es una aproximación heurística, con errores esperables en diálogo rápido/interrumpido. Comunicarlo así al usuario. **Confirmado en la practica**: en la corrida real de 1804 segmentos, el modelo dejo de aplicar la etiqueta `Investigador:`/`Entrevistado:` en algunas lineas de bloques mas avanzados — no es 100% consistente en cada bloque.
+- **Encontrado el 2026-07-29, evidencia directa - la atribucion de hablante NO es determinística entre corridas del mismo audio.** Se proceso el mismo archivo (`LOS AMIGOS DE EDU CRISTIANO RONALDO ENTREVISTA COMPLETA.mp3`) dos veces (interview_id=1 y interview_id=8, mismo modelo `qwen2.5:7b`). Comparando linea por linea, varios tramos quedaron con etiquetas distintas entre las dos corridas para el mismo contenido:
+  ```
+  Corrida 1 (interview_id=1):        Corrida 2 (interview_id=8):
+  Entrevistado: ¿Cómo estás,          Entrevistado: ¿Cómo estás, hermano?
+    hermano? Bien.                   Investigador: Bien.
+  Entrevistado: ¿Qué tal en Arabia?   Investigador: ¿Qué tal en Arabia?
+  Investigador: Muy bien.             Entrevistado: Muy bien.
+  ```
+  Es decir, ni siquiera es consistentemente incorrecto de la misma manera - el LLM literalmente decide distinto cada vez para las mismas frases cortas ("Bien.", "Muy bien.") donde no hay señal gramatical clara de quién habla. Esto confirma que el problema no es solo "diálogo rápido es dificil" (ya documentado) sino que **el mecanismo en sí no es confiable para frases cortas sin contexto semántico fuerte** - es la causa mas probable de lo que el usuario reporto como "una frase del entrevistado queda atribuida al entrevistador".
+- **Encontrado el 2026-07-29**: el modelo a veces no respeta las dos etiquetas exactas pedidas en el prompt (`Investigador:`/`Entrevistado:`) y emite variantes inventadas - se vieron `Investigado:` y `Entrevistador:` en al menos dos entrevistas reales distintas (interview_id=8 e interview_id=9), no un caso aislado. A diferencia del problema de atribución (semánticamente difícil), esto es un bug de adherencia al formato, más barato de mitigar: normalizar la salida con una pasada de post-procesamiento (regex/mapeo de variantes conocidas a las dos etiquetas canónicas) antes de guardar `transcript_final.txt`, o reforzar el prompt con ejemplos few-shot del formato exacto.
+- **Encontrado el 2026-07-29**: whisper.cpp puede alucinar texto en otro idioma en tramos de audio poco claros/silenciosos - se vio una línea completa en chino (`Practic平稳过渡到下一个问题：`) en medio de una transcripción en español (interview_id=9), que pasó sin corregirse por la Fase 1 de Ollama. Sugiere agregar una validación simple (¿el texto del segmento usa mayoritariamente el alfabeto esperado para el idioma forzado?) antes de pasarlo a Ollama, en vez de confiar en que la fase de corrección lo arregle.
 - Intentar mandar los 1804 segmentos (u equivalente) de una entrevista real en un solo prompt — no entra en la ventana de contexto de un modelo local razonable.
 - Anonimizar cada bloque de forma aislada sin una tabla de sustitución compartida — genera inconsistencias (`"Cristiano"` anonimizado distinto en cada bloque), rompiendo la promesa de Privacy First.
+- **Encontrado en la corrida real, hallazgo critico**: la tabla de sustitucion de dos pasadas es consistente para lo que detecta (la misma entidad recibe siempre el mismo placeholder), pero el **recall** del prompt de extraccion (Fase 2a) es incompleto — en la entrevista de prueba, nombres de figuras publicas mencionadas de pasada ("Messi", "Pele", "Maradona", "Florentino Perez", "Pepe") **no se anonimizaron**, y aparecieron sin tocar tanto en el transcript corregido como en el resumen final (que se genera a partir del texto ya anonimizado, heredando el hueco). **La anonimizacion actual NO esta lista para confiar en ella sin revision humana** - Sprint 7 (Export) no deberia asumir que una entrevista "anonimizada" esta realmente libre de PII sin ese chequeo adicional. Pendiente: refinar el prompt de extraccion (ejemplos few-shot, pedir explicitamente nombres de personas publicas/famosas), evaluar una pasada de verificacion extra, o mantener una lista de nombres conocidos del dominio (jugadores, clubes) como refuerzo determinístico ademas del LLM.
 
 # Hermes Usage
 
-Diseño de referencia para implementar [[Sprint 6 - Ollama Integration]]. Extiende el pipeline de [[Sprint 5 - Whisper Integration]] (que ya deja `raw_transcript_path` y un `transcript_final.txt` sin diarizar como resultado utilizable en solitario). **Estado: draft, pendiente de aprobación humana antes de implementar** — mismo criterio que se siguió para Sprint 5.
+Implementado y verificado a escala real el 2026-07-28/29: `OllamaClient`/`TranscriptEnhancer` corridos contra entrevistas reales (interview_id=1, 8, 9), con logging de progreso agregado el 29 (ver whisper.cpp Architecture y Sprint 4 para el patrón de `current_step`). El transcript corregido y el resumen final son de calidad genuinamente utilizable como *lectura*, pero la atribución de hablante línea por línea **no es confiable todavía** — no determinística entre corridas del mismo audio (ver Common Mistakes). **Pendiente antes de confiar en producción**: (1) recall de la extracción de entidades incompleto, (2) atribución de hablante inconsistente entre corridas, (3) el modelo a veces no respeta el formato exacto de etiquetas pedido. Ninguno de los tres bloquea usar la transcripción como texto plano — si bloquean tratar la salida como una diarización o anonimización confiables sin revisión humana. Extiende el pipeline de [[Sprint 5 - Whisper Integration]] sin tocar `IJobQueue`/`WorkerPool`, con degradación con gracia verificada (el `transcript_final.txt` de Sprint 5 nunca se pierde).
 
 # Related Notes
 

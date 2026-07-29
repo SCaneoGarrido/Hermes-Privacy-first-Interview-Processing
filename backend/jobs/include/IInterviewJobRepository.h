@@ -33,9 +33,17 @@ class IInterviewJobRepository {
         // estados pending/running/completed/failed.
         virtual bool saveRawTranscriptPath(int interviewId, const std::string& path) = 0;
 
-        // Tambien actualiza interviews.status a 'completed'.
+        // Feedback de progreso para la UI (ver InterviewProcessingJobHandler):
+        // normalizando_audio | transcribiendo | corrigiendo_texto |
+        // anonimizando | generando_resumen. No es parte de la maquina de
+        // estados pending/running/completed/failed, es informativo.
+        virtual bool updateCurrentStep(int interviewId, const std::string& step) = 0;
+        // current_step del job 'running' de esta entrevista, si hay uno.
+        virtual std::optional<std::string> findCurrentStep(int interviewId) = 0;
+
+        // Tambien actualiza interviews.status a 'completed' y limpia current_step.
         virtual bool markCompleted(int interviewId) = 0;
-        // Tambien actualiza interviews.status a 'failed'.
+        // Tambien actualiza interviews.status a 'failed' y limpia current_step.
         virtual bool markFailed(int interviewId, const std::string& errorMessage) = 0;
 
         // Al arrancar (main.cpp, junto a migrateTables): cualquier job que
@@ -46,6 +54,14 @@ class IInterviewJobRepository {
         // pueda reprocesar en vez de quedar bloqueada para siempre.
         // Devuelve la cantidad de jobs reclamados.
         virtual int reclaimStuckJobs() = 0;
+
+        // Segundos entre started_at/finished_at del job mas reciente de esta
+        // entrevista que tenga ambos timestamps seteados (sin importar su
+        // status - un job failed tambien informa cuanto tardo en fallar).
+        // nullopt si nunca corrio un job con ambos timestamps. Calculado en
+        // la consulta, no una columna nueva - ver "Execution Time" en
+        // whisper.cpp Architecture (la vault).
+        virtual std::optional<long long> findLatestExecutionTimeSeconds(int interviewId) = 0;
 };
 
 }  // namespace hermes::jobs

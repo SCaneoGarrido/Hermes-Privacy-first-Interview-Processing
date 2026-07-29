@@ -38,12 +38,17 @@ class IInterviewRepository {
         virtual bool existsById(int id) = 0;
         virtual std::optional<InterviewAudioRecord> findAudioByInterviewId(int id) = 0;
         virtual std::optional<std::string> findTranscriptionPathByInterviewId(int id) = 0;
+        virtual std::optional<std::string> findSummaryPathByInterviewId(int id) = 0;
         virtual bool updateStatus(int id, const std::string& status) = 0;
         virtual bool insertAudio(int interviewId, const std::string& path, const std::string& format, long long size) = 0;
         // Guarda/reemplaza el resultado final (Sprint 5/6). UPSERT: interview_id
         // es UNIQUE en interview_results, y una entrevista puede reprocesarse
         // (ver Sprint 4) despues de ya haber tenido un resultado previo.
         virtual bool upsertTranscriptionResult(int interviewId, const std::string& path) = 0;
+        // UPDATE puntual (no upsert): se llama despues de
+        // upsertTranscriptionResult en el mismo job (Fase 3, Sprint 6), la
+        // fila de interview_results ya existe para ese momento.
+        virtual bool updateSummaryPath(int interviewId, const std::string& path) = 0;
         // Borra la entrevista. interviews_audio / interview_results se
         // eliminan solos via ON DELETE CASCADE (SQL/init.sql).
         virtual bool remove(int id) = 0;

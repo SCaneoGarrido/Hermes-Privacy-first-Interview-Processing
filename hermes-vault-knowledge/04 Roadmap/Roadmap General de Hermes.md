@@ -43,7 +43,7 @@ Secuencia de sprints:
 | 3 | [[Sprint 3 - File Upload]] | 🟠 in-progress | Upload + validación de firma de bytes; falta progreso de subida (depende de Sprint 4) |
 | 4 | [[Sprint 4 - Background Processing]] | ⚪ draft | No iniciado — sin cola de trabajos ni worker threads |
 | 5 | [[Sprint 5 - Whisper Integration]] | ✅ done | Implementado y verificado end-to-end 2026-07-28 (audio real → whisper.cpp → JSON + TXT, `interviews.status = completed`). `transcriptionController.h` sigue sin usarse (la transcripción corre dentro de `InterviewProcessingJobHandler`, no por un endpoint propio) |
-| 6 | [[Sprint 6 - Ollama Integration]] | ⚪ draft | No iniciado |
+| 6 | [[Sprint 6 - Ollama Integration]] | 🟡 done (con reserva) | Implementado y verificado a escala real 2026-07-28 (1804 segmentos). Pendiente: recall de anonimización incompleto - no confiar en produccion sin refinar antes de habilitar Sprint 7 |
 | 7 | [[Sprint 7 - Export]] | ⚪ draft | No iniciado |
 | 8 | [[Sprint 8 - Frontend]] | 🟠 in-progress | Adelantado fuera de orden; falta progreso real, descargas y configuración |
 | 9 | [[Sprint 9 - Configuration]] | ⚪ draft | No iniciado |

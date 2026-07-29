@@ -1,11 +1,11 @@
 ---
 title: ADR-015 - cpp-httplib como Cliente HTTP para Ollama
 aliases: ["OllamaClient HTTP", "Cliente HTTP de Hermes"]
-tags: [adr, hermes, libraries, ai, proposed]
-status: proposed
+tags: [adr, hermes, libraries, ai]
+status: accepted
 created: 2026-07-28
 updated: 2026-07-28
-source: Diseño de sesión (Claude Code, pendiente de aprobación humana)
+source: Diseño de sesión (Claude Code) + implementacion y verificacion el mismo dia
 related: ["ADR-005 - Ollama como Motor LLM", "ADR-009 - libmariadb como Cliente MySQL", "ADR-014 - FFmpeg Estatico via vcpkg para Normalizacion de Audio", "Ollama Integration Strategy", "Filosofia de Repositorios"]
 ---
 
@@ -29,10 +29,14 @@ Usar **cpp-httplib** vía vcpkg, con `"default-features": false` (sin brotli/ope
 - Nueva entrada en `vcpkg.json`: `cpp-httplib` con `default-features: false`. Header-only — no agrega tiempo de build relevante (a diferencia de FFmpeg/whisper.cpp en Sprint 5).
 - `OllamaClient` hace requests bloqueantes (`httplib::Client::Post(...)`), consistente con que el worker de Sprint 4 procesa un job a la vez de forma síncrona - no hace falta manejo async.
 - Si en el futuro Hermes necesita hablar con otro servicio HTTP por HTTPS, esta decisión hay que revisarla (agregar el feature `openssl` de cpp-httplib, o reconsiderar libcurl).
+- **Gotchas de plataforma descubiertos en la práctica (MinGW/Windows)**:
+  - `httplib.h` no compila sin `_WIN32_WINNT` definido a Windows 10+ (`0x0A00`) - sin esto asume Windows 8 o anterior y falla la compilación. Se agrega vía `target_compile_definitions`.
+  - El feature `HTTPLIB_USE_NON_BLOCKING_GETADDRINFO` de cpp-httplib viene **ON por defecto en todas las plataformas** (no solo Windows) y usa `GetAddrInfoExCancel`, que este toolchain de MinGW no declara — falla la compilación. Se remueve la definición `CPPHTTPLIB_USE_NON_BLOCKING_GETADDRINFO` del target `httplib::httplib` manualmente en `CMakeLists.txt` (viene envuelta en una generator expression, no como string plano). No hace falta resolución DNS asíncrona/cancelable para hablarle a Ollama en `localhost`.
+- Verificado en producción: `OllamaClient` corrido contra Ollama real (`qwen2.5:7b`) a escala real (1804 segmentos, ~65 requests, ~11 minutos), sin fallos de conexión.
 
 # Status
 
-Proposed — pendiente de aprobación humana antes de agregarse a `vcpkg.json` e implementarse. Ver [[Ollama Integration Strategy]] y [[Sprint 6 - Ollama Integration]].
+Accepted — implementado y verificado el 2026-07-28. Ver [[Ollama Integration Strategy]] y [[Sprint 6 - Ollama Integration]].
 
 # References
 

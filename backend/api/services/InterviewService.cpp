@@ -27,10 +27,13 @@ std::optional<InterviewDetailRecord> InterviewService::getInterviewDetail(int id
     detail.interview = interview.value();
     detail.audio = m_repository.findAudioByInterviewId(id);
     detail.transcriptionPath = m_repository.findTranscriptionPathByInterviewId(id);
+    detail.summaryPath = m_repository.findSummaryPathByInterviewId(id);
+    detail.executionTimeSeconds = m_jobRepository.findLatestExecutionTimeSeconds(id);
+    detail.currentStep = m_jobRepository.findCurrentStep(id);
     return detail;
 }
 
-ProcessOutcome InterviewService::requestProcessing(int id) {
+ProcessOutcome InterviewService::requestProcessing(int id, bool includeSummary) {
     if (!m_repository.existsById(id)) {
         return ProcessOutcome::NotFound;
     }
@@ -53,7 +56,10 @@ ProcessOutcome InterviewService::requestProcessing(int id) {
         return ProcessOutcome::Failed;
     }
 
-    m_jobQueue.enqueue(hermes::jobs::Job{id});
+    hermes::jobs::Job job;
+    job.interviewId = id;
+    job.includeSummary = includeSummary;
+    m_jobQueue.enqueue(std::move(job));
 
     return ProcessOutcome::Ok;
 }

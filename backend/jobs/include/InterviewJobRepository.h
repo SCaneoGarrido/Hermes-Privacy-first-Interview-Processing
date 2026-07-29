@@ -16,9 +16,12 @@ class InterviewJobRepository : public IInterviewJobRepository {
         std::optional<int> createPending(int interviewId) override;
         bool markRunning(int interviewId) override;
         bool saveRawTranscriptPath(int interviewId, const std::string& path) override;
+        bool updateCurrentStep(int interviewId, const std::string& step) override;
+        std::optional<std::string> findCurrentStep(int interviewId) override;
         bool markCompleted(int interviewId) override;
         bool markFailed(int interviewId, const std::string& errorMessage) override;
         int reclaimStuckJobs() override;
+        std::optional<long long> findLatestExecutionTimeSeconds(int interviewId) override;
 
     private:
         DatabaseManager& m_db;

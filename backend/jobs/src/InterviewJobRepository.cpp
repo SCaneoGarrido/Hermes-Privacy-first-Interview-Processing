@@ -1,6 +1,7 @@
 #include "../include/InterviewJobRepository.h"
 #include "../../api/include/logger.h"
 
+#include <type_traits>
 #include <vector>
 
 namespace hermes::jobs {
@@ -56,6 +57,35 @@ bool InterviewJobRepository::saveRawTranscriptPath(int interviewId, const std::s
     return result.has_value();
 }
 
+bool InterviewJobRepository::updateCurrentStep(int interviewId, const std::string& step) {
+    auto jobId = findJobId(interviewId, "running");
+    if (!jobId.has_value()) {
+        log_event("[InterviewJobRepository][updateCurrentStep] No hay job running para interview_id=" + std::to_string(interviewId));
+        return false;
+    }
+
+    std::vector<SqlParam> params = {step, jobId.value()};
+    auto result = m_db.executePrepared(
+        "UPDATE interview_jobs SET current_step = ? WHERE id = ?",
+        params);
+    return result.has_value();
+}
+
+std::optional<std::string> InterviewJobRepository::findCurrentStep(int interviewId) {
+    std::vector<SqlParam> params = {interviewId};
+    auto rows = m_db.executeQuery(
+        "SELECT current_step FROM interview_jobs WHERE interview_id = ? AND status = 'running' ORDER BY id DESC LIMIT 1",
+        params);
+    if (rows.empty() || rows[0].empty()) {
+        return std::nullopt;
+    }
+    const std::string& step = std::get<std::string>(rows[0][0]);
+    if (step.empty()) {
+        return std::nullopt;
+    }
+    return step;
+}
+
 bool InterviewJobRepository::markCompleted(int interviewId) {
     auto jobId = findJobId(interviewId, "running");
     if (!jobId.has_value()) {
@@ -65,7 +95,7 @@ bool InterviewJobRepository::markCompleted(int interviewId) {
 
     std::vector<SqlParam> params = {jobId.value()};
     auto result = m_db.executePrepared(
-        "UPDATE interview_jobs SET status = 'completed', finished_at = NOW() WHERE id = ?",
+        "UPDATE interview_jobs SET status = 'completed', finished_at = NOW(), current_step = NULL WHERE id = ?",
         params);
     if (!result.has_value()) {
         return false;
@@ -86,7 +116,7 @@ bool InterviewJobRepository::markFailed(int interviewId, const std::string& erro
 
     std::vector<SqlParam> params = {errorMessage, jobId.value()};
     auto result = m_db.executePrepared(
-        "UPDATE interview_jobs SET status = 'failed', error_message = ?, finished_at = NOW() WHERE id = ?",
+        "UPDATE interview_jobs SET status = 'failed', error_message = ?, finished_at = NOW(), current_step = NULL WHERE id = ?",
         params);
     if (!result.has_value()) {
         return false;
@@ -118,7 +148,7 @@ int InterviewJobRepository::reclaimStuckJobs() {
 
         std::vector<SqlParam> params = {std::string("interrupted by restart"), jobId};
         auto result = m_db.executePrepared(
-            "UPDATE interview_jobs SET status = 'failed', error_message = ?, finished_at = NOW() WHERE id = ?",
+            "UPDATE interview_jobs SET status = 'failed', error_message = ?, finished_at = NOW(), current_step = NULL WHERE id = ?",
             params);
         if (!result.has_value()) {
             continue;
@@ -134,6 +164,32 @@ int InterviewJobRepository::reclaimStuckJobs() {
     }
 
     return reclaimed;
+}
+
+std::optional<long long> InterviewJobRepository::findLatestExecutionTimeSeconds(int interviewId) {
+    std::vector<SqlParam> params = {interviewId};
+    auto rows = m_db.executeQuery(
+        "SELECT TIMESTAMPDIFF(SECOND, started_at, finished_at) FROM interview_jobs "
+        "WHERE interview_id = ? AND started_at IS NOT NULL AND finished_at IS NOT NULL "
+        "ORDER BY id DESC LIMIT 1",
+        params);
+
+    if (rows.empty() || rows[0].empty()) {
+        return std::nullopt;
+    }
+
+    // TIMESTAMPDIFF puede volver como int o long long segun como MySQL
+    // reporte el tipo del campo calculado - se acepta cualquiera de los dos.
+    return std::visit([](auto&& value) -> long long {
+        using T = std::decay_t<decltype(value)>;
+        if constexpr (std::is_same_v<T, int>) {
+            return static_cast<long long>(value);
+        } else if constexpr (std::is_same_v<T, long long>) {
+            return value;
+        } else {
+            return 0;
+        }
+    }, rows[0][0]);
 }
 
 std::optional<int> InterviewJobRepository::findJobId(int interviewId, const std::string& statusFilter) {

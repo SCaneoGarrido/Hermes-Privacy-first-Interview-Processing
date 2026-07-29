@@ -16,6 +16,8 @@
 #include "jobs/include/WorkerPool.h"
 #include "audio/include/FfmpegAudioNormalizer.h"
 #include "transcription/include/WhisperTranscriber.h"
+#include "llm/include/OllamaClient.h"
+#include "llm/include/TranscriptEnhancer.h"
 #include "api/include/Constanst.h"
 
 #include <cstdlib>
@@ -84,7 +86,16 @@ int main()
         env_or("WHISPER_MODEL_PATH", std::string(Config::DEFAULT_WHISPER_MODEL_PATH)),
         env_or("WHISPER_LANGUAGE", "es"));
 
-    hermes::jobs::InterviewProcessingJobHandler jobHandler(interviewRepository, jobRepository, audioNormalizer, transcriber);
+    // Sprint 6 - Ollama Integration: correccion+estructuracion,
+    // anonimizacion y resumen sobre la transcripcion de Sprint 5. Sin
+    // estado propio pesado (a diferencia de whisper_context, no hace
+    // falta carga perezosa ni mutex - ver ADR-015).
+    hermes::llm::OllamaClient                   ollamaClient(
+        env_or("OLLAMA_BASE_URL", "http://localhost:11434"),
+        env_or("OLLAMA_MODEL", "qwen2.5:7b"));
+    hermes::llm::TranscriptEnhancer             transcriptEnhancer(ollamaClient);
+
+    hermes::jobs::InterviewProcessingJobHandler jobHandler(interviewRepository, jobRepository, audioNormalizer, transcriber, transcriptEnhancer);
     const int workerPoolSize = std::stoi(env_or("WORKER_POOL_SIZE", "1"));
     hermes::jobs::WorkerPool                    workerPool(jobQueue, jobHandler, jobRepository, workerPoolSize);
 
@@ -123,8 +134,16 @@ int main()
         return interviewController.deleteInterview(id);
     });
 
-    CROW_ROUTE(app, "/api/v1/interview/<int>/process").methods(crow::HTTPMethod::POST)([&interviewController](int id) {
-        return interviewController.processInterview(id);
+    CROW_ROUTE(app, "/api/v1/interview/<int>/process").methods(crow::HTTPMethod::POST)([&interviewController](const crow::request& req, int id) {
+        return interviewController.processInterview(req, id);
+    });
+
+    CROW_ROUTE(app, "/api/v1/interview/<int>/download/transcript").methods(crow::HTTPMethod::GET)([&interviewController](int id) {
+        return interviewController.downloadTranscript(id);
+    });
+
+    CROW_ROUTE(app, "/api/v1/interview/<int>/download/summary").methods(crow::HTTPMethod::GET)([&interviewController](int id) {
+        return interviewController.downloadSummary(id);
     });
 
     // ==== Rutas/metodos sin match (404 / 405): sin esto, Crow devuelve su

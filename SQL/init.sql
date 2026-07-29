@@ -64,6 +64,9 @@ CREATE TABLE IF NOT EXISTS interview_results (
     id                                  INT AUTO_INCREMENT PRIMARY KEY,
     interview_transcription_file_path   VARCHAR(500) NOT NULL,
     interview_id                        INT          NOT NULL,
+    -- Ruta al resumen final (Fase 3, Sprint 6). NULL si Ollama no corrio o
+    -- fallo esa fase - la transcripcion sigue siendo valida sin resumen.
+    summary_file_path                   VARCHAR(500) NULL,
     created_at                          TIMESTAMP    DEFAULT CURRENT_TIMESTAMP,
 
     CONSTRAINT uq_interview_results_interview_id
@@ -74,6 +77,11 @@ CREATE TABLE IF NOT EXISTS interview_results (
         ON DELETE CASCADE
         ON UPDATE CASCADE
 ) ENGINE=InnoDB;
+
+-- Idempotente: ver comentario de ALTER TABLE interviews mas arriba.
+ALTER TABLE interview_results
+    ADD COLUMN summary_file_path VARCHAR(500) NULL
+    AFTER interview_transcription_file_path;
 
 -- ------------------------------------------------------------
 -- Tabla: interview_jobs (Sprint 4 - Background Processing)
@@ -93,6 +101,11 @@ CREATE TABLE IF NOT EXISTS interview_jobs (
     -- Ruta al JSON crudo de whisper.cpp (segmentos + timestamps), Sprint 5.
     -- Es la entrada que Sprint 6 (Ollama) va a leer para la diarizacion.
     raw_transcript_path   VARCHAR(500) NULL,
+    -- Paso grueso actual, solo mientras status='running' (se limpia a NULL
+    -- al completar/fallar): normalizando_audio | transcribiendo |
+    -- corrigiendo_texto | anonimizando | generando_resumen. Feedback de UI
+    -- para que un job de varios minutos no parezca trabado.
+    current_step          VARCHAR(50)  NULL,
     started_at            DATETIME     NULL,
     finished_at           DATETIME     NULL,
     created_at            TIMESTAMP    DEFAULT CURRENT_TIMESTAMP,
@@ -108,3 +121,7 @@ CREATE TABLE IF NOT EXISTS interview_jobs (
 ALTER TABLE interview_jobs
     ADD COLUMN raw_transcript_path VARCHAR(500) NULL
     AFTER error_message;
+
+ALTER TABLE interview_jobs
+    ADD COLUMN current_step VARCHAR(50) NULL
+    AFTER raw_transcript_path;
