@@ -4,9 +4,9 @@ aliases: ["Sprint 6 Strategy", "LLM Pipeline", "OllamaClient Design"]
 tags: [ai, hermes, ollama, architecture, sprint6]
 status: stable
 created: 2026-07-28
-updated: 2026-07-28
+updated: 2026-07-29
 source: Diseño de sesión (Claude Code) + implementacion y verificacion a escala real el mismo dia (1804 segmentos, entrevista real de ~70 min)
-related: ["ADR-005 - Ollama como Motor LLM", "ADR-015 - cpp-httplib como Cliente HTTP para Ollama", "whisper.cpp Architecture", "Sprint 5 - Whisper Integration", "Sprint 6 - Ollama Integration", "Filosofia de Repositorios", "Privacy First"]
+related: ["ADR-005 - Ollama como Motor LLM", "ADR-015 - cpp-httplib como Cliente HTTP para Ollama", "whisper.cpp Architecture", "GPU Acceleration Strategy", "Sprint 5 - Whisper Integration", "Sprint 6 - Ollama Integration", "Filosofia de Repositorios", "Privacy First"]
 ---
 
 # Summary
@@ -110,6 +110,20 @@ La anonimización es el entregable de Hermes más directamente ligado a su propu
 - Anonimizar cada bloque de forma aislada sin una tabla de sustitución compartida — genera inconsistencias (`"Cristiano"` anonimizado distinto en cada bloque), rompiendo la promesa de Privacy First.
 - **Encontrado en la corrida real, hallazgo critico**: la tabla de sustitucion de dos pasadas es consistente para lo que detecta (la misma entidad recibe siempre el mismo placeholder), pero el **recall** del prompt de extraccion (Fase 2a) es incompleto — en la entrevista de prueba, nombres de figuras publicas mencionadas de pasada ("Messi", "Pele", "Maradona", "Florentino Perez", "Pepe") **no se anonimizaron**, y aparecieron sin tocar tanto en el transcript corregido como en el resumen final (que se genera a partir del texto ya anonimizado, heredando el hueco). **La anonimizacion actual NO esta lista para confiar en ella sin revision humana** - Sprint 7 (Export) no deberia asumir que una entrevista "anonimizada" esta realmente libre de PII sin ese chequeo adicional. Pendiente: refinar el prompt de extraccion (ejemplos few-shot, pedir explicitamente nombres de personas publicas/famosas), evaluar una pasada de verificacion extra, o mantener una lista de nombres conocidos del dominio (jugadores, clubes) como refuerzo determinístico ademas del LLM.
 
+# Backlog priorizado de calidad (2026-07-29, pendiente de implementar)
+
+Los 4 hallazgos de arriba no son igual de costosos de resolver. Orden recomendado, decidido antes de cerrar sesión para retomar en la próxima:
+
+**1. Normalizar variantes de etiqueta** (barato, bajo riesgo) — cualquier línea que no empiece exactamente con `Investigador:` o `Entrevistado:` (ej. `Investigado:`, `Entrevistador:`) se mapea a la etiqueta canónica más parecida antes de guardar `transcript_final.txt`. Post-procesamiento simple, sin tocar el prompt.
+
+**2. Determinismo entre corridas** (barato, gratis en esfuerzo) — `OllamaClient::chat()` hoy **no fija `temperature` ni `seed`** en el request a `/api/chat`, así que usa el default de Ollama (~0.8, bastante aleatorio). Agregar `"options": {"temperature": 0, "seed": <fijo>}` al body no arregla que la atribución sea *correcta*, pero la vuelve *consistente* — mismo audio, mismo resultado siempre. No soluciona el hallazgo del recall de anonimización (eso es un problema de qué detecta el modelo, no de aleatoriedad), pero sí ataca directamente el hallazgo de no-determinismo en atribución de hablante.
+
+**3. Validación de idioma/alfabeto** (esfuerzo medio) — antes de mandar cada segmento de whisper a Ollama, chequear que el texto use mayoritariamente el alfabeto esperado para el idioma forzado (`WHISPER_LANGUAGE`); si no, marcarlo o descartarlo en vez de dejar pasar alucinaciones como la línea en chino encontrada en interview_id=9.
+
+**4. Recall de extracción de entidades** (esfuerzo alto, el más importante — bloquea [[Sprint 7 - Export]]) — necesita iteración real: prompt con ejemplos few-shot, posible lista determinística de nombres conocidos del dominio como refuerzo, y varias corridas de prueba para medir mejora real. Merece su propia sesión dedicada, no un ajuste de pasada.
+
+Recomendación: 1 y 2 juntos en la próxima sesión (ambos son cambios chicos y acotados), 3 después, 4 aparte. Ver también [[GPU Acceleration Strategy]], documentado el mismo día como backlog paralelo (rendimiento, no calidad) — ninguno de los dos bloquea al otro.
+
 # Hermes Usage
 
 Implementado y verificado a escala real el 2026-07-28/29: `OllamaClient`/`TranscriptEnhancer` corridos contra entrevistas reales (interview_id=1, 8, 9), con logging de progreso agregado el 29 (ver whisper.cpp Architecture y Sprint 4 para el patrón de `current_step`). El transcript corregido y el resumen final son de calidad genuinamente utilizable como *lectura*, pero la atribución de hablante línea por línea **no es confiable todavía** — no determinística entre corridas del mismo audio (ver Common Mistakes). **Pendiente antes de confiar en producción**: (1) recall de la extracción de entidades incompleto, (2) atribución de hablante inconsistente entre corridas, (3) el modelo a veces no respeta el formato exacto de etiquetas pedido. Ninguno de los tres bloquea usar la transcripción como texto plano — si bloquean tratar la salida como una diarización o anonimización confiables sin revisión humana. Extiende el pipeline de [[Sprint 5 - Whisper Integration]] sin tocar `IJobQueue`/`WorkerPool`, con degradación con gracia verificada (el `transcript_final.txt` de Sprint 5 nunca se pierde).
@@ -119,6 +133,7 @@ Implementado y verificado a escala real el 2026-07-28/29: `OllamaClient`/`Transc
 - [[ADR-005 - Ollama como Motor LLM]]
 - [[ADR-015 - cpp-httplib como Cliente HTTP para Ollama]]
 - [[whisper.cpp Architecture]]
+- [[GPU Acceleration Strategy]]
 - [[Sprint 5 - Whisper Integration]]
 - [[Sprint 6 - Ollama Integration]]
 - [[Sprint 7 - Export]]
@@ -128,6 +143,6 @@ Implementado y verificado a escala real el 2026-07-28/29: `OllamaClient`/`Transc
 
 # References
 
-- Sesión de diseño 2026-07-28 (Priority 1, este documento — pendiente de aprobación)
+- Sesión de diseño 2026-07-28/29 (Priority 1, este documento — implementado, backlog de calidad y GPU pendiente)
 - Datos reales de Sprint 5: entrevista de ~70 minutos, 1804 segmentos (interview_id=1, verificado end-to-end)
 - https://github.com/ollama/ollama/blob/main/docs/api.md (Priority 4)

@@ -4,9 +4,9 @@ aliases: ["AI Index", "08 AI"]
 tags: [moc, ai, index]
 status: draft
 created: 2026-07-24
-updated: 2026-07-28
+updated: 2026-07-29
 source: .ai/KNOWLEDGE_BACKLOG.md
-related: ["whisper.cpp - Repositorio Oficial", "ADR-004 - whisper.cpp para Reconocimiento de Voz", "ADR-005 - Ollama como Motor LLM", "whisper.cpp Architecture", "ADR-014 - FFmpeg Estatico via vcpkg para Normalizacion de Audio", "Ollama Integration Strategy", "ADR-015 - cpp-httplib como Cliente HTTP para Ollama"]
+related: ["whisper.cpp - Repositorio Oficial", "ADR-004 - whisper.cpp para Reconocimiento de Voz", "ADR-005 - Ollama como Motor LLM", "whisper.cpp Architecture", "ADR-014 - FFmpeg Estatico via vcpkg para Normalizacion de Audio", "Ollama Integration Strategy", "ADR-015 - cpp-httplib como Cliente HTTP para Ollama", "GPU Acceleration Strategy"]
 ---
 
 # Summary
@@ -18,7 +18,9 @@ related: ["whisper.cpp - Repositorio Oficial", "ADR-004 - whisper.cpp para Recon
 Temas identificados en `.ai/KNOWLEDGE_BACKLOG.md` (alta prioridad):
 
 - [x] whisper.cpp Architecture — ver [[whisper.cpp Architecture]] y [[ADR-014 - FFmpeg Estatico via vcpkg para Normalizacion de Audio]] (diseñado, implementado y verificado end-to-end 2026-07-28, ambos `status: stable`/`accepted`)
-- [x] Ollama API — ver [[Ollama Integration Strategy]] y [[ADR-015 - cpp-httplib como Cliente HTTP para Ollama]] (diseño escrito 2026-07-28, `status: draft`/`proposed`, pendiente de aprobación antes de implementar Sprint 6)
+- [x] Ollama API — ver [[Ollama Integration Strategy]] y [[ADR-015 - cpp-httplib como Cliente HTTP para Ollama]] (diseñado, implementado y verificado a escala real 2026-07-28/29, ambos `status: stable`/`accepted`. Backlog de calidad pendiente documentado en la misma nota)
+
+**Backlog abierto (2026-07-29)**: [[GPU Acceleration Strategy]] — plan para Vulkan (whisper.cpp) y deteccion/aviso de GPU para Ollama, investigado pero no implementado todavia.
 
 Adicionalmente, pendiente documentar el modelo por defecto **Qwen** (.ai/PROJECT.md) como nota propia una vez se investigue su configuración concreta en Hermes.
 
@@ -51,6 +53,7 @@ Ver [[ADR-004 - whisper.cpp para Reconocimiento de Voz]], [[ADR-005 - Ollama com
 - [[ADR-014 - FFmpeg Estatico via vcpkg para Normalizacion de Audio]]
 - [[Ollama Integration Strategy]]
 - [[ADR-015 - cpp-httplib como Cliente HTTP para Ollama]]
+- [[GPU Acceleration Strategy]]
 
 # References
 
