@@ -2,20 +2,18 @@
 title: Roadmap General de Hermes
 aliases: ["Hermes Roadmap"]
 tags: [roadmap, hermes]
-status: draft
+status: stable
 created: 2026-07-24
-updated: 2026-07-28
-source: README.md
+updated: 2026-08-15
+source: .ai/ROADMAP.md
 related: ["Hermes - Vision General"]
 ---
 
 # Summary
 
-Hermes se desarrolla en 13 sprints (Sprint 0 a Sprint 12), desde la configuración del entorno hasta la primera versión estable 1.0.
+Hermes se desarrolla en 13 sprints (Sprint 0 a Sprint 12), desde la configuración del entorno hasta la primera versión estable 1.0. **Se preparó una primera pre-release, v0.1.0, el 2026-08-15** (README, CHANGELOG y versión de CMake actualizados; commit pendiente al momento de escribir esta nota, todavía sin tag de git) — funcional de punta a punta pero sin cubrir el alcance completo de v1.0 (ver tabla de estado abajo).
 
 # Explanation
-
-> **Nota de fuente:** `.ai/ROADMAP.md` existe pero está vacío al momento de esta nota (2026-07-24). El contenido del roadmap se ha tomado de `README.md` (Priority 2 / documentación complementaria del repositorio), no de `.ai/`. Cuando `.ai/ROADMAP.md` se complete, esta nota y las notas de sprint deben revisarse y reconciliarse con esa fuente de Priority 1.
 
 Secuencia de sprints:
 
@@ -33,25 +31,25 @@ Secuencia de sprints:
 12. [[Sprint 11 - Documentation]]
 13. [[Sprint 12 - Release]]
 
-# Status (2026-07-28)
+# Status (2026-08-15)
 
 | # | Sprint | Estado | Nota |
 |---|--------|--------|------|
 | 0 | [[Sprint 0 - Foundation]] | ✅ done | Entorno, CMake/vcpkg, Crow, MySQL, logging, `/health` |
 | 1 | [[Sprint 1 - Core API]] | 🟠 in-progress | Services/Repositories y versionado `/api/v1` ya resueltos ([[ADR-012 - Repository y Service Layer para Entrevistas]], [[ADR-013 - Versionado de API]]); falta endpoint Configuration y DTOs formales |
 | 2 | [[Sprint 2 - Persistence]] | ✅ done | CRUD completo (incl. `DELETE`) + `IInterviewRepository`/`InterviewService` ([[ADR-012 - Repository y Service Layer para Entrevistas]]) |
-| 3 | [[Sprint 3 - File Upload]] | 🟠 in-progress | Upload + validación de firma de bytes; falta progreso de subida (depende de Sprint 4) |
-| 4 | [[Sprint 4 - Background Processing]] | ⚪ draft | No iniciado — sin cola de trabajos ni worker threads |
-| 5 | [[Sprint 5 - Whisper Integration]] | ✅ done | Implementado y verificado end-to-end 2026-07-28 (audio real → whisper.cpp → JSON + TXT, `interviews.status = completed`). `transcriptionController.h` sigue sin usarse (la transcripción corre dentro de `InterviewProcessingJobHandler`, no por un endpoint propio) |
-| 6 | [[Sprint 6 - Ollama Integration]] | 🟡 done (con reserva) | Implementado y verificado a escala real 2026-07-28 (1804 segmentos). Pendiente: recall de anonimización incompleto - no confiar en produccion sin refinar antes de habilitar Sprint 7 |
-| 7 | [[Sprint 7 - Export]] | ⚪ draft | No iniciado |
-| 8 | [[Sprint 8 - Frontend]] | 🟠 in-progress | Adelantado fuera de orden; falta progreso real, descargas y configuración |
-| 9 | [[Sprint 9 - Configuration]] | ⚪ draft | No iniciado |
-| 10 | [[Sprint 10 - Testing]] | ⚪ draft | No iniciado — sin tests Catch2, solo un test manual de conexión |
-| 11 | [[Sprint 11 - Documentation]] | 🟡 draft | Subestimado: `.ai/`, esta bóveda y `docs/API_REQUIREMENTS.md` ya existen; falta guía de instalación formal |
-| 12 | [[Sprint 12 - Release]] | ⚪ draft | No iniciado |
+| 3 | [[Sprint 3 - File Upload]] | 🟠 in-progress | Upload + validación de firma de bytes; falta progreso de subida |
+| 4 | [[Sprint 4 - Background Processing]] | ✅ done | Cola de jobs in-memory + worker pool, máquina de estados persistida, dedupe (409), recuperación de crashes (`reclaimStuckJobs`), cierra una condición de carrera en `DatabaseManager` que existía desde Sprint 0 |
+| 5 | [[Sprint 5 - Whisper Integration]] | ✅ done | Verificado end-to-end contra una entrevista real de ~70min (1804 segmentos) |
+| 6 | [[Sprint 6 - Ollama Integration]] | 🟡 done (con reservas) | Verificado a escala real. Determinismo y normalización de etiquetas resueltos 2026-08-15. **Pendiente, bloquea Sprint 7**: recall de anonimización incompleto |
+| 7 | [[Sprint 7 - Export]] | ⚪ draft (bloqueado) | No iniciado a propósito — depende de que la anonimización de Sprint 6 sea confiable |
+| 8 | [[Sprint 8 - Frontend]] | 🟠 in-progress | Adelantado fuera de orden; progreso real, checkbox de resumen y descargas ya funcionan; falta configuración |
+| 9 | [[Sprint 9 - Configuration]] | ⚪ draft | No iniciado — toda la configuración hoy es por variables de entorno |
+| 10 | [[Sprint 10 - Testing]] | ⚪ draft | No iniciado — sin tests Catch2, solo verificación manual contra entrevistas reales |
+| 11 | [[Sprint 11 - Documentation]] | 🟡 in-progress (subestimado) | `.ai/`, esta bóveda y `docs/API_REQUIREMENTS.md` activamente mantenidos; `README.md` reescrito y `CHANGELOG.md` agregado 2026-08-15; falta guía de instalación formal |
+| 12 | [[Sprint 12 - Release]] | 🟡 en curso | v0.1.0 (pre-release/early preview) preparada 2026-08-15 — ver [[Estado Actual del Proyecto]]. No es la v1.0 completa que este sprint define originalmente |
 
-Bloqueador clave: [[Sprint 4 - Background Processing]] abre el camino a 5, 6 y 7 (el pipeline de IA local, el corazón del producto).
+Bloqueador clave hoy: el recall de anonimización de [[Sprint 6 - Ollama Integration]] bloquea [[Sprint 7 - Export]]. Para el estado de trabajo en curso, sesión a sesión, ver [[Estado Actual del Proyecto]].
 
 # Why it matters
 
@@ -73,7 +71,9 @@ Esta nota es el índice de la sección [[04 Roadmap]] y debe mantenerse sincroni
 # Related Notes
 
 - [[Hermes - Vision General]]
+- [[Estado Actual del Proyecto]]
 
 # References
 
-- README.md (Priority 2 — usado por ausencia de contenido en .ai/ROADMAP.md, Priority 1)
+- .ai/ROADMAP.md (Priority 1)
+- README.md (Priority 2, complementario — reescrito 2026-08-15 para explicar el proyecto tal como es hoy)

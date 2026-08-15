@@ -4,7 +4,7 @@ aliases: []
 tags: [roadmap, sprint, hermes]
 status: in-progress
 created: 2026-07-24
-updated: 2026-07-28
+updated: 2026-08-15
 source: README.md
 related: ["Sprint 7 - Export", "Sprint 9 - Configuration", "API First", "ADR-011 - Contrato de Respuesta API Uniforme", "Sprint 4 - Background Processing"]
 ---
@@ -17,14 +17,15 @@ Interfaz web en React para operar todo el pipeline de Hermes.
 
 **Objetivo:** interfaz web.
 
-**Entregables (2026-07-28)**, adelantados fuera de orden respecto al roadmap original (los sprints 4-7 todavía no existen) porque el objetivo inmediato era validar el flujo crear → subir audio → procesar de punta a punta:
+**Entregables (actualizado 2026-08-15)**, adelantados fuera de orden respecto al roadmap original porque el objetivo inmediato era validar el flujo crear → subir audio → procesar de punta a punta:
 - ✅ React + TypeScript + Vite, sin librería de UI ni autenticación (fuera de alcance v1.0)
 - ✅ Carga de entrevistas (crear + asociar audio)
 - ✅ Listado (`InterviewsListPage`, consume `GET /interviews`)
 - ✅ Detalle (`InterviewDetailPage`, consume `GET /interview/:id`, incluye subir audio y botón "Enviar a procesar")
-- ❌ Progreso — no hay cola de trabajos real todavía ([[Sprint 4 - Background Processing]] no implementado); el botón "procesar" solo marca `status = processing`, sin pipeline detrás
-- ❌ Descargas — depende de [[Sprint 7 - Export]], no implementado
-- ❌ Configuración — depende de [[Sprint 9 - Configuration]], no implementado
+- ✅ Progreso — [[Sprint 4 - Background Processing]] terminó implementándose; el frontend hace polling del job real, mostrando paso actual (`normalizando_audio`/`transcribiendo`/`corrigiendo_texto`/`anonimizando`/`generando_resumen`) y tiempo transcurrido
+- ✅ Checkbox opcional "Generar resumen" (`include_summary`), con aviso de que aumenta el tiempo de procesamiento
+- ✅ Descargas — `<a download>` directo a `/interview/:id/download/transcript` y `/download/summary` (no pasa por el cliente JSON, ver comentario en `frontend/src/api/interviews.ts`)
+- ❌ Configuración — depende de [[Sprint 9 - Configuration]], todavía no implementado; toda la config del backend es por variables de entorno
 
 # Why it matters
 

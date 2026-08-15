@@ -2,9 +2,9 @@
 title: Sprint 11 - Documentation
 aliases: []
 tags: [roadmap, sprint, hermes]
-status: draft
+status: in-progress (subestimado)
 created: 2026-07-24
-updated: 2026-07-24
+updated: 2026-08-15
 source: README.md
 related: ["Sprint 10 - Testing", "Sprint 12 - Release"]
 ---
@@ -18,6 +18,8 @@ Documentación completa del proyecto: README, guías de instalación, arquitectu
 **Objetivo:** documentación completa.
 
 **Entregables:** README, Installation Guide, Developer Guide, Architecture, API Documentation, Contribution Guide.
+
+> **Más avanzado de lo que sugiere "no iniciado"**: `.ai/` (contexto para trabajo asistido por IA), esta bóveda (`hermes-vault-knowledge/`, en actualización continua) y `docs/API_REQUIREMENTS.md` ya existen y se mantienen activamente. `README.md` se reescribió por completo el 2026-08-15 para explicar el proyecto tal como es hoy (qué funciona, qué falta, limitaciones conocidas) en vez de ser solo el plan original de 13 sprints; se sumó `CHANGELOG.md` con el detalle de la primera release. **Sigue faltando**: guía de instalación formal paso a paso pensada para un investigador sin experiencia técnica (la visión de "instalar en menos de 10 minutos"), developer guide, y guía de contribución.
 
 # Why it matters
 

@@ -2,7 +2,7 @@
 
 Formato basado en [Keep a Changelog](https://keepachangelog.com/), versionado según [Semantic Versioning](https://semver.org/).
 
-## [0.1.0] - 2026-08-10
+## [0.1.0] - 2026-08-15
 
 Primera pre-release / early preview. Pipeline end-to-end funcional y verificado contra entrevistas reales, pero **no** cubre todavía el alcance completo planeado para v1.0 (Export, Configuration, Testing, instalador). Ver README.md ("Qué falta para v1.0" y "Limitaciones conocidas") antes de usar con datos sensibles reales.
 

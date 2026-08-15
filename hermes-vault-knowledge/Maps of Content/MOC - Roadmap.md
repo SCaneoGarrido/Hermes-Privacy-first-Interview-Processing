@@ -15,6 +15,7 @@ Mapa de contenido de la sección [[04 Roadmap]]: los 13 sprints de Hermes, de Fo
 
 # Explanation
 
+- [[Estado Actual del Proyecto]] (estado vivo, sesión a sesión — leer primero)
 - [[Roadmap General de Hermes]] (overview y nota de fuente)
 - [[Sprint 0 - Foundation]]
 - [[Sprint 1 - Core API]]

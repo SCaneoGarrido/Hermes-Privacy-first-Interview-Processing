@@ -15,6 +15,9 @@ Mapa de contenido de la sección [[01 Project]]: misión, principios y alcance d
 
 # Explanation
 
+**Estado actual**
+- [[Estado Actual del Proyecto]] — empezar por acá para retomar el trabajo.
+
 **Visión**
 - [[Hermes - Vision General]]
 

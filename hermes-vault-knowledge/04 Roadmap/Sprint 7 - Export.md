@@ -2,9 +2,9 @@
 title: Sprint 7 - Export
 aliases: []
 tags: [roadmap, sprint, hermes]
-status: draft
+status: draft (bloqueado, no iniciado)
 created: 2026-07-24
-updated: 2026-07-24
+updated: 2026-08-15
 source: README.md
 related: ["Sprint 6 - Ollama Integration", "Sprint 8 - Frontend"]
 ---
@@ -18,6 +18,8 @@ Exportación de entrevistas procesadas en múltiples formatos.
 **Objetivo:** exportación.
 
 **Entregables:** TXT, DOCX, PDF, JSON.
+
+> **No iniciado, bloqueado a propósito.** [[Sprint 6 - Ollama Integration]] dejó documentado que el recall de la anonimización automática es incompleto (nombres de figuras públicas mencionadas de pasada no siempre se detectan). Exportar por defecto sin resolver eso primero rompería la promesa de [[Privacy First]]. Cuando se implemente, este sprint necesita más que un chequeo booleano de "¿corrió la anonimización sin error?" — probablemente una advertencia explícita al usuario de que el resultado amerita revisión antes de compartirlo, hasta que el recall mejore.
 
 # Why it matters
 

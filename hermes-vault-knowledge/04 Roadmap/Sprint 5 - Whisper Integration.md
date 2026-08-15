@@ -2,9 +2,9 @@
 title: Sprint 5 - Whisper Integration
 aliases: []
 tags: [roadmap, sprint, hermes]
-status: draft
+status: done
 created: 2026-07-24
-updated: 2026-07-28
+updated: 2026-08-15
 source: README.md
 related: ["Sprint 4 - Background Processing", "Sprint 6 - Ollama Integration", "ADR-004 - whisper.cpp para Reconocimiento de Voz", "whisper.cpp Architecture", "ADR-014 - FFmpeg Estatico via vcpkg para Normalizacion de Audio"]
 ---
