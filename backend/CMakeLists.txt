@@ -27,7 +27,7 @@ if(NOT DEFINED VCPKG_HOST_TRIPLET)
     set(VCPKG_HOST_TRIPLET "x64-mingw-static" CACHE STRING "")
 endif()
 
-project(backend)
+project(backend VERSION 0.1.0)
 
 find_package(Crow CONFIG REQUIRED)
 find_package(unofficial-libmariadb CONFIG REQUIRED)

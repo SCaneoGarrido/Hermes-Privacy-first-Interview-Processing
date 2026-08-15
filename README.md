@@ -2,463 +2,168 @@
 
 > Privacy-first Interview Processing
 
-Hermes es una plataforma open source diseñada para la transcripción local de entrevistas de investigación, anonimización de información sensible y apoyo al análisis cualitativo, priorizando la privacidad de los datos y evitando la dependencia de servicios cloud.
+Hermes es una plataforma open source para procesar entrevistas de investigación cualitativa **de forma completamente local**: transcripción, corrección/estructuración por hablante, anonimización de información sensible y (opcionalmente) resumen — todo corriendo en la propia máquina del investigador, sin depender de ningún servicio cloud ni API externa.
+
+Pensado para investigación que puede incluir información sensible (pacientes, profesionales de salud, identificadores personales), donde subir el audio a un servicio de terceros no es una opción aceptable.
+
+**Estado actual: v0.1.0 — pre-release / early preview.** Funciona de punta a punta con entrevistas reales, pero todavía no cumple el alcance completo planeado para una v1.0 (ver [Qué falta](#qué-falta-para-v10) y [Limitaciones conocidas](#limitaciones-conocidas) más abajo antes de usarlo con datos sensibles reales).
 
 ---
 
-# Objetivos
+## Qué hace hoy
 
-## Objetivo principal
+Con el backend y el frontend corriendo, más Ollama y un modelo de whisper.cpp descargados localmente, Hermes permite:
 
-Desarrollar una plataforma local que permita a investigadores procesar entrevistas de manera segura mediante inteligencia artificial ejecutándose completamente en infraestructura propia.
+1. **Subir un audio de entrevista** (validación por firma de bytes, no solo extensión).
+2. **Procesarlo en background** — cola de jobs con estados (`pending`/`running`/`completed`/`failed`), reintentable, con recuperación si el backend se reinicia a mitad de un job.
+3. **Transcribirlo localmente** con [whisper.cpp](https://github.com/ggml-org/whisper.cpp) (audio normalizado antes vía FFmpeg: mono, 16kHz, PCM16).
+4. **Mejorar la transcripción con un LLM local** vía [Ollama](https://ollama.com/) (familia Qwen), en tres fases:
+   - Corrección ortográfica/de puntuación + estructuración por hablante (`Investigador:`/`Entrevistado:`).
+   - Anonimización de nombres, lugares y organizaciones (tabla de sustitución consistente en toda la entrevista).
+   - Resumen final (opcional, `include_summary`, apagado por defecto).
+5. **Seguir el progreso** desde el frontend (paso actual, tiempo transcurrido).
+6. **Descargar** la transcripción final y, si se pidió, el resumen, como `.txt`.
 
-## Objetivos secundarios
+Si Ollama no está corriendo o falla, la entrevista no se pierde: queda disponible la transcripción cruda de whisper sin diarizar (degradación con gracia).
 
-- Diseñar una arquitectura mantenible y escalable.
-- Crear un proyecto open source reutilizable.
-- Permitir que futuros estudiantes puedan instalar Hermes sin conocimientos avanzados de programación.
+## Qué falta para v1.0
+
+El alcance original de v1.0 (definido al arrancar el proyecto) incluye piezas que todavía no existen:
+
+- **Exportación** (DOCX/PDF/JSON) — no empezada. Bloqueada a propósito hasta que la anonimización sea confiable (ver abajo).
+- **Endpoint de configuración** — no empezado; hoy toda la configuración es por variables de entorno.
+- **Tests automatizados** — no hay tests Catch2 todavía, solo verificación manual contra entrevistas reales.
+- **Instalador de Windows** — no empezado.
+- **Aceleración por GPU** (Vulkan para whisper.cpp) — investigado y planeado, no implementado; hoy todo corre en CPU.
+
+El detalle sprint por sprint vive en [`.ai/ROADMAP.md`](.ai/ROADMAP.md).
+
+## Limitaciones conocidas
+
+Verificado contra entrevistas reales (no solo audio de prueba sintético). Lo que se encontró:
+
+- **La anonimización automática no tiene 100% de recall.** En pruebas reales quedaron sin anonimizar nombres de figuras públicas mencionadas de pasada. **No asumir que una transcripción "anonimizada" está realmente libre de PII sin revisión humana** — es la razón principal por la que Export sigue bloqueado.
+- **La atribución de hablante (`Investigador:`/`Entrevistado:`) es una aproximación heurística del LLM sobre texto, no diarización acústica real.** Tiene errores esperables en diálogo rápido o con turnos muy cortos.
+- whisper.cpp puede alucinar texto en otro idioma en tramos de audio poco claros.
+- Todo corre en CPU hoy — una entrevista de ~70 minutos tarda del orden de 20-25 minutos en procesarse completa.
+
+El detalle y el backlog priorizado de estos hallazgos están en `hermes-vault-knowledge/08 AI/Ollama Integration Strategy.md`.
 
 ---
 
-# Filosofía del proyecto
+## Arquitectura
 
-Hermes seguirá los siguientes principios:
-
-- Privacy First
-- Local First
-- Open Source
-- Modular Monolith
-- API First
-- Clean Architecture
-- Framework Agnostic
-- Testable
-- Extensible
-
----
-
-# Arquitectura
-
-Se utilizará una arquitectura:
-
-Monolito Modular
-
-con separación por capas:
+Monolito modular en C++20, con el frontend como cliente puro de la API REST — toda la lógica de negocio vive en el backend.
 
 ```
-API
-
-↓
-
-Application
-
-↓
-
-Domain
-
-↓
-
-Infrastructure
+frontend/    React + TypeScript + Vite
+backend/     API (Crow) → Services → Repositories → MySQL / whisper.cpp / Ollama
+SQL/         Esquema de base de datos
+docs/        Requisitos de API y decisiones técnicas
+.ai/         Contexto del proyecto para trabajo asistido por IA
+hermes-vault-knowledge/  Base de conocimiento (Obsidian) — arquitectura, ADRs, hallazgos
 ```
 
-Cada módulo tendrá una única responsabilidad.
+Cada dependencia externa está detrás de una interfaz (`ITranscriber` → `WhisperTranscriber`, `ILLMClient` → `OllamaClient`, `IInterviewRepository` → `MySqlInterviewRepository`, etc.) — la lógica de negocio no depende directamente de Crow, MySQL, whisper.cpp ni Ollama.
+
+Decisiones de arquitectura documentadas como ADRs en [`.ai/DECISIONS.md`](.ai/DECISIONS.md).
+
+## Stack
+
+| | |
+|---|---|
+| Backend | C++20, [Crow](https://crowcpp.org/) |
+| Base de datos | MySQL 8 (Docker Compose) |
+| Reconocimiento de voz | whisper.cpp |
+| LLM | Ollama (Qwen) |
+| Frontend | React + TypeScript + Vite |
+| Build | CMake + vcpkg (manifest mode) |
+| Serialización | nlohmann/json |
+| Logging | spdlog |
 
 ---
 
-# Roadmap
+## Cómo correrlo
 
----
+### Requisitos previos
 
-# Sprint 0 — Foundation
+- **MinGW-w64** en el `PATH` (g++, gcc, ninja, cmake) — el proyecto compila con MinGW, no necesita Visual Studio.
+- Variable de entorno `VCPKG_ROOT` apuntando a una instalación local de [vcpkg](https://vcpkg.io/).
+- **Docker** (para MySQL vía `docker-compose.yml`).
+- **[Ollama](https://ollama.com/download)** instalado y corriendo localmente, con un modelo Qwen descargado: `ollama pull qwen2.5:7b` (o `qwen2.5:3b-instruct` en hardware más limitado).
+- Un modelo de **whisper.cpp** en formato `ggml` (ej. `ggml-small.bin`) descargado desde [huggingface.co/ggerganov/whisper.cpp](https://huggingface.co/ggerganov/whisper.cpp) o vía `models/download-ggml-model.sh` del repo de whisper.cpp.
+- **Node.js** (para el frontend).
 
-## Objetivo
+### 1. Base de datos
 
-Preparar completamente el entorno de desarrollo.
-
-## Entregables
-
-- Repositorio Git
-- Configuración CMake
-- Configuración vcpkg
-- Primer proyecto compilando
-- Configuración de Crow
-- Configuración MySQL (Docker Compose)
-- Configuración Logging
-- Primer endpoint REST
-- Documentación inicial
-
-## Endpoints
-
-GET /api/v1/health
-
-GET /api/v1/info
-
----
-
-# Sprint 1 — Core API
-
-## Objetivo
-
-Construir el núcleo del backend.
-
-## Entregables
-
-- Estructura modular
-- Controllers
-- Services
-- Repositories
-- DTOs
-- Configuración
-- Manejo de errores
-- Logging
-- Versionado API
-
-## Endpoints
-
-Interview
-
-Configuration
-
-Health
-
----
-
-# Sprint 2 — Persistence
-
-## Objetivo
-
-Persistencia de entrevistas.
-
-## Entregables
-
-- MySQL (Docker Compose + libmariadb)
-- CRUD entrevistas
-- Gestión de archivos
-- Metadata
-- Directorios de almacenamiento
-
-## Funcionalidades
-
-Crear entrevista
-
-Eliminar entrevista
-
-Consultar entrevista
-
-Listado
-
----
-
-# Sprint 3 — File Upload
-
-## Objetivo
-
-Carga de audios.
-
-## Entregables
-
-- Upload Multipart
-- Validación
-- Organización de archivos
-- Identificadores únicos
-- Validaciones
-
----
-
-# Sprint 4 — Background Processing
-
-## Objetivo
-
-Procesamiento asíncrono.
-
-## Entregables
-
-- Job Queue
-- Worker Threads
-- Estados
-- Progress Tracking
-
-Estados
-
-Pending
-
-Running
-
-Completed
-
-Failed
-
----
-
-# Sprint 5 — Whisper Integration
-
-## Objetivo
-
-Transcripción local.
-
-## Entregables
-
-Integración whisper.cpp
-
-Generación TXT
-
-Generación JSON
-
-Detección idioma
-
-Configuración modelo
-
----
-
-# Sprint 6 — Ollama Integration
-
-## Objetivo
-
-Integración IA local.
-
-## Entregables
-
-Cliente HTTP
-
-Corrección ortográfica
-
-Puntuación
-
-Resúmenes
-
-Anonimización
-
----
-
-# Sprint 7 — Export
-
-## Objetivo
-
-Exportación.
-
-## Entregables
-
-TXT
-
-DOCX
-
-PDF
-
-JSON
-
----
-
-# Sprint 8 — Frontend
-
-## Objetivo
-
-Interfaz web.
-
-## Entregables
-
-React
-
-Carga entrevistas
-
-Listado
-
-Detalle
-
-Progreso
-
-Descargas
-
-Configuración
-
----
-
-# Sprint 9 — Configuration
-
-## Objetivo
-
-Configuración completa.
-
-## Entregables
-
-Configuración modelos
-
-Configuración almacenamiento
-
-Configuración idioma
-
-Configuración puertos
-
-Configuración LLM
-
----
-
-# Sprint 10 — Testing
-
-## Objetivo
-
-Calidad.
-
-## Entregables
-
-Unit Tests
-
-Integration Tests
-
-Stress Tests
-
-Logging
-
-Benchmarks
-
----
-
-# Sprint 11 — Documentation
-
-## Objetivo
-
-Documentación completa.
-
-## Entregables
-
-README
-
-Installation Guide
-
-Developer Guide
-
-Architecture
-
-API Documentation
-
-Contribution Guide
-
----
-
-# Sprint 12 — Release
-
-## Objetivo
-
-Primera versión estable.
-
-## Entregables
-
-Versión 1.0
-
-Release Notes
-
-Instalador Windows
-
-Documentación
-
-Repositorio público
-
----
-
-# Estructura del proyecto
-
-```
-Hermes/
-
-backend/
-
-frontend/
-
-docs/
-
-scripts/
-
-tests/
-
-storage/
-
-README.md
-
-LICENSE
-
-CHANGELOG.md
+```powershell
+cp .env.example .env   # ajustar credenciales
+docker compose up -d
 ```
 
----
+### 2. Backend
 
-# Convenciones
+```powershell
+cd backend
+cmake -S . -B build
+cmake --build build
+.\build\backend.exe
+```
 
-## Idioma
+`cmake -S . -B build` instala automáticamente las dependencias declaradas en `vcpkg.json` (manifest mode) — no hace falta correr `vcpkg install` a mano. El backend escucha en `http://127.0.0.1:18080` (`/api/v1/...`).
 
-Código
+Coloca el modelo de whisper.cpp en `backend/models/ggml-small.bin`, o configurá `WHISPER_MODEL_PATH` con la ruta que uses.
 
-Inglés
+### 3. Frontend
 
-Documentación
+```powershell
+cd frontend
+npm install
+npm run dev
+```
 
-Inglés
+### Variables de entorno relevantes (backend)
 
-Manual de usuario
+| Variable | Default | Uso |
+|---|---|---|
+| `MYSQL_HOST` / `MYSQL_USER` / `MYSQL_PASSWORD` / `MYSQL_DATABASE` / `MYSQL_PORT` | ver `docker-compose.yml` | Conexión a MySQL |
+| `WHISPER_MODEL_PATH` | `./models/ggml-small.bin` | Modelo de whisper.cpp |
+| `WHISPER_LANGUAGE` | `es` | Idioma forzado para la transcripción |
+| `OLLAMA_BASE_URL` | `http://localhost:11434` | Endpoint de Ollama |
+| `OLLAMA_MODEL` | `qwen2.5:7b` | Modelo Qwen a usar |
+| `WORKER_POOL_SIZE` | `1` | Threads del worker pool de procesamiento |
 
-Español (inicialmente)
+### Endpoints principales
 
----
+```
+GET    /api/v1/health
+POST   /api/v1/upload
+POST   /api/v1/interview
+GET    /api/v1/interviews
+GET    /api/v1/interview/:id
+DELETE /api/v1/interview/:id
+POST   /api/v1/interview/:id/process
+GET    /api/v1/interview/:id/download/transcript
+GET    /api/v1/interview/:id/download/summary
+```
 
-## Convenciones Git
-
-main
-
-develop
-
-feature/*
-
-fix/*
-
-release/*
-
-hotfix/*
-
----
-
-## Versionado
-
-Semantic Versioning
-
-MAJOR.MINOR.PATCH
-
-Ejemplo
-
-1.0.0
-
----
-
-# Objetivos de la versión 1.0
-
-- API REST funcional
-- Procesamiento local
-- Whisper.cpp
-- Ollama
-- Exportación DOCX
-- React
-- MySQL (Docker Compose)
-- Instalador Windows
-- Documentación completa
+Contrato completo en [`docs/API_REQUIREMENTS.md`](docs/API_REQUIREMENTS.md).
 
 ---
 
-# Fuera del alcance (v1.0)
+## Filosofía del proyecto
 
-No se implementará:
+- **Privacy First** — información sensible nunca sale de la máquina local salvo configuración explícita del usuario.
+- **Local First** — funciona sin conexión a Internet.
+- **API First** — toda la lógica de negocio se expone vía REST; el frontend es solo un cliente.
+- **Monolito modular** — no microservicios; un único ejecutable con módulos independientes.
+- **Clean Architecture** — los frameworks son detalles de implementación, la lógica de negocio no depende de Crow, MySQL, whisper.cpp ni Ollama.
+- **Mantenibilidad sobre ingenio** — código legible antes que optimizaciones complejas.
 
-- Autenticación
-- Usuarios
-- Roles
-- Multiempresa
-- Procesamiento distribuido
-- Kubernetes
-- Docker obligatorio
-- PostgreSQL
-- Microservicios
-- Integraciones cloud
-- Sincronización online
+### Fuera de alcance
 
-Estos elementos podrán evaluarse para futuras versiones.
+No se va a agregar (salvo decisión explícita en contrario): autenticación/usuarios/roles, multi-tenant, procesamiento distribuido, Kubernetes, microservicios, message brokers, ni integración con servicios cloud (Azure/AWS/GCP/OpenAI API).
 
----
+## Licencia
 
-# Visión
-
-Hermes busca convertirse en una herramienta open source para investigadores que necesiten procesar entrevistas de manera privada, segura y completamente local, utilizando inteligencia artificial sin depender de servicios externos.
+[MIT](LICENSE)

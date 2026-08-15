@@ -2,6 +2,7 @@
 #include "../../api/include/logger.h"
 
 #include <algorithm>
+#include <limits>
 #include <map>
 #include <sstream>
 
@@ -102,6 +103,58 @@ std::string toLower(std::string s) {
     return s;
 }
 
+// Distancia de edicion entre dos strings, usada para mapear variantes de
+// etiqueta a la canonica mas parecida (ver abajo).
+size_t levenshtein(const std::string& a, const std::string& b) {
+    std::vector<size_t> prev(b.size() + 1), curr(b.size() + 1);
+    for (size_t j = 0; j <= b.size(); ++j) prev[j] = j;
+    for (size_t i = 1; i <= a.size(); ++i) {
+        curr[0] = i;
+        for (size_t j = 1; j <= b.size(); ++j) {
+            const size_t cost = (a[i - 1] == b[j - 1]) ? 0 : 1;
+            curr[j] = std::min({prev[j] + 1, curr[j - 1] + 1, prev[j - 1] + cost});
+        }
+        std::swap(prev, curr);
+    }
+    return prev[b.size()];
+}
+
+const std::vector<std::string> CANONICAL_LABELS_LOWER = {"investigador", "entrevistado"};
+const std::vector<std::string> CANONICAL_LABELS = {"Investigador", "Entrevistado"};
+
+// Maxima distancia de edicion para considerar que la primera palabra de una
+// linea es una variante inventada de etiqueta (ej. "Investigado:",
+// "Entrevistador:", ver Common Mistakes en Ollama Integration Strategy) en
+// vez de contenido normal que no deberia tocarse.
+constexpr size_t LABEL_MAX_EDIT_DISTANCE = 3;
+
+// Si la linea empieza con algo que se parece a "Investigador:" o
+// "Entrevistado:" pero no es exactamente eso, la reemplaza por la etiqueta
+// canonica mas cercana. El modelo a veces no respeta el formato exacto
+// pedido en el prompt; esto normaliza sin volver a invocar a Ollama.
+std::string normalizeSpeakerLabel(const std::string& line) {
+    const size_t colon = line.find(':');
+    if (colon == std::string::npos) return line;
+
+    const std::string labelLower = toLower(line.substr(0, colon));
+    if (labelLower == CANONICAL_LABELS_LOWER[0] || labelLower == CANONICAL_LABELS_LOWER[1]) {
+        return line;
+    }
+
+    size_t bestIdx = 0;
+    size_t bestDist = std::numeric_limits<size_t>::max();
+    for (size_t i = 0; i < CANONICAL_LABELS_LOWER.size(); ++i) {
+        const size_t dist = levenshtein(labelLower, CANONICAL_LABELS_LOWER[i]);
+        if (dist < bestDist) {
+            bestDist = dist;
+            bestIdx = i;
+        }
+    }
+
+    if (bestDist > LABEL_MAX_EDIT_DISTANCE) return line;
+    return CANONICAL_LABELS[bestIdx] + line.substr(colon);
+}
+
 }  // namespace
 
 TranscriptEnhancer::TranscriptEnhancer(ILLMClient& client) : m_client(client) {}
@@ -156,6 +209,13 @@ std::string TranscriptEnhancer::correctAndStructure(const std::vector<hermes::tr
         userPrompt += "Fragmento a procesar:\n" + chunkText;
 
         std::string chunkResult = trim(m_client.chat(systemPrompt, userPrompt));
+
+        std::string normalizedChunk;
+        for (const auto& line : splitLines(chunkResult)) {
+            normalizedChunk += normalizeSpeakerLabel(line) + "\n";
+        }
+        chunkResult = trim(normalizedChunk);
+
         result += chunkResult + "\n";
         continuity = lastLines(chunkResult, CONTINUITY_LINES);
     }

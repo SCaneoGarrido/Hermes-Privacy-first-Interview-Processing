@@ -2,6 +2,10 @@
 
 13 sprints, Sprint 0 to Sprint 12. Each sprint must leave the project deployable.
 
+## Current release: v0.1.0 (pre-release / early preview)
+
+Tagged 2026-08-10. End-to-end pipeline (upload -> transcribe -> correct/anonymize -> download) works and was verified against real interviews, but the project does not yet meet the scope originally defined for v1.0 -- see README.md ("Qué falta para v1.0" and "Limitaciones conocidas") for the user-facing version of this list. Not recommended for processing real sensitive data without human review of the anonymization output.
+
 ## Sprint 0 - Foundation
 
 Status: Done
@@ -44,7 +48,9 @@ Status: Done, with known quality gaps
 
 `llm/` (cpp-httplib, ADR-015; `OllamaClient`, `TranscriptEnhancer`). Three phases over whisper's raw segments: correction + speaker labeling (chunked), anonymization (two-pass entity table for consistency), summary (map-reduce, opt-in via `include_summary`, off by default). Verified at real scale. Known issues, documented in `hermes-vault-knowledge/08 AI/Ollama Integration Strategy.md`: entity-extraction recall is incomplete (some public figures not anonymized); speaker attribution is not deterministic between runs of the same audio; the model sometimes emits label variants outside the two requested; whisper.cpp can hallucinate text in another language on unclear audio. None of this blocks using the transcript as plain text; all of it blocks trusting the output as a reliable diarization/anonymization without human review.
 
-**Open backlog (2026-07-29, not yet implemented)**: prioritized fix plan in the same vault note (label normalization, `temperature`/`seed` for determinism, language/alphabet validation, entity recall -- in that order). GPU acceleration (Vulkan for whisper.cpp, GPU detection + advisory logging for Ollama) researched and planned in `hermes-vault-knowledge/08 AI/GPU Acceleration Strategy.md`, also not yet implemented.
+**Open backlog (2026-07-29)**: prioritized fix plan in the same vault note. Items 1 (label normalization) and 2 (`temperature`/`seed` for determinism) implemented 2026-08-07. Still pending: language/alphabet validation, entity recall (the most important -- blocks Sprint 7). GPU acceleration (Vulkan for whisper.cpp, GPU detection + advisory logging for Ollama) researched and planned in `hermes-vault-knowledge/08 AI/GPU Acceleration Strategy.md`, not yet implemented.
+
+**Unrelated bug found and fixed 2026-08-10 while testing the above**: downloaded transcripts showed mojibake accents (e.g. `Â¿QuÃ©` instead of `¿Qué`) when opened in some Windows text editors. Root cause was not the pipeline -- `transcript_final.txt` on disk and the HTTP response were both confirmed correct UTF-8 -- but the absence of a BOM, which makes editors without reliable UTF-8 auto-detection fall back to the system ANSI codepage. Fixed by prepending a UTF-8 BOM in `buildDownloadResponse` (`backend/api/controllers/interviewController.cpp`), download-response only, not in the stored file (so nothing that re-reads `transcript_final.txt` internally, e.g. future Export, is affected). Also found during the same session: a label variant (`Investervistado:`) at edit-distance 6 from both canonical labels (tied) -- deliberately left unfixed rather than guessing the speaker, documented as an open finding in `hermes-vault-knowledge/08 AI/Ollama Integration Strategy.md`.
 
 ## Sprint 7 - Export
 

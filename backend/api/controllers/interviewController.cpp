@@ -24,7 +24,16 @@ crow::response buildDownloadResponse(const std::string& path, const std::string&
     std::stringstream buffer;
     buffer << file.rdbuf();
 
-    crow::response res(200, buffer.str());
+    // BOM UTF-8 al inicio de la respuesta (no del archivo en disco): sin
+    // el, editores de texto en Windows sin deteccion de codificacion
+    // confiable (Notepad clasico, entre otros) adivinan la pagina de
+    // codigos ANSI del sistema en vez de UTF-8, y los acentos se ven como
+    // mojibake pese a que el archivo es UTF-8 valido. Se agrega solo aca,
+    // no al escribir transcript_final.txt, para no afectar nada que lo
+    // vuelva a leer internamente (ej. Sprint 7 - Export).
+    static const std::string UTF8_BOM = "\xEF\xBB\xBF";
+
+    crow::response res(200, UTF8_BOM + buffer.str());
     res.set_header("Content-Type", "text/plain; charset=utf-8");
     res.set_header("Content-Disposition", "attachment; filename=\"" + downloadFilename + "\"");
     return res;

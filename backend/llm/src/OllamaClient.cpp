@@ -7,6 +7,19 @@
 
 namespace hermes::llm {
 
+namespace {
+
+// Ollama usa temperature ~0.8 por defecto si no se especifica - suficiente
+// aleatoriedad para que el mismo audio produzca atribuciones de hablante
+// distintas entre corridas (ver Ollama Integration Strategy en la vault,
+// hallazgo del 2026-07-29: interview_id=1 vs interview_id=8, mismo audio,
+// etiquetas distintas). temperature=0 + seed fijo no corrige que el modelo
+// se equivoque, pero garantiza que se equivoque siempre igual.
+constexpr double DETERMINISTIC_TEMPERATURE = 0.0;
+constexpr int DETERMINISTIC_SEED = 42;
+
+}  // namespace
+
 OllamaClient::OllamaClient(std::string baseUrl, std::string model)
     : m_baseUrl(std::move(baseUrl)), m_model(std::move(model)) {}
 
@@ -20,6 +33,10 @@ std::string OllamaClient::chat(const std::string& systemPrompt, const std::strin
     nlohmann::json body;
     body["model"] = m_model;
     body["stream"] = false;
+    body["options"] = {
+        {"temperature", DETERMINISTIC_TEMPERATURE},
+        {"seed", DETERMINISTIC_SEED},
+    };
     body["messages"] = nlohmann::json::array({
         {{"role", "system"}, {"content", systemPrompt}},
         {{"role", "user"}, {"content", userPrompt}},
