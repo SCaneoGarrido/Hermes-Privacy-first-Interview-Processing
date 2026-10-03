@@ -34,6 +34,12 @@ ALTER TABLE interviews
     ADD COLUMN status VARCHAR(20) NOT NULL DEFAULT 'pending_audio'
     AFTER interview_subject_type;
 
+-- Glosario de palabras clave de la entrevista, un termino por linea (ADR-018).
+-- Idempotente: ver comentario de ALTER TABLE interviews mas arriba.
+ALTER TABLE interviews
+    ADD COLUMN keywords TEXT NULL
+    AFTER status;
+
 -- ------------------------------------------------------------
 -- Tabla: interviews_audio
 -- Referencia el audio de una entrevista (1 audio por entrevista)

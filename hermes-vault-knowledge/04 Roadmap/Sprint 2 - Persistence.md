@@ -4,7 +4,7 @@ aliases: []
 tags: [roadmap, sprint, hermes]
 status: done
 created: 2026-07-24
-updated: 2026-07-28
+updated: 2026-10-02
 source: README.md
 related: ["Sprint 1 - Core API", "Sprint 3 - File Upload", "ADR-008 - MySQL como Base de Datos", "ADR-009 - libmariadb como Cliente MySQL", "MariaDB Connector-C (libmariadb)", "Filosofia de Repositorios"]
 ---
@@ -26,6 +26,8 @@ Persistencia de entrevistas mediante MySQL: CRUD, gestión de archivos y metadat
 - ✅ Eliminar entrevista (`DELETE /interview/:id`) — borra la fila, la cascada de MySQL se encarga de `interviews_audio`/`interview_results`, y además borra el archivo de audio real en `./uploads` (Privacy First: sin esto quedaría huérfano en disco)
 
 `DatabaseManager` (`backend/api/shared/database/`) expone `executePrepared` (INSERT/UPDATE, con `SqlParam = std::variant<int, long long, std::string>` para parámetros tipados) y `executeQuery` (SELECT, mapea columnas de vuelta a `SqlParam` respetando el tipo real de MySQL — ver [[MariaDB Connector-C (libmariadb)]] para el detalle de por qué las columnas `DATETIME`/`TIMESTAMP` necesitan bindearse como texto). Ya no se llama directo desde los controllers (ver abajo).
+
+**Actualización 2026-10-02 — reconexión a MySQL:** `DatabaseManager` abría una sola conexión al iniciar y nunca la reabría. Tras un reinicio de MySQL (`docker compose restart`) el backend respondía todo con "Server has gone away" hasta reiniciarlo (además había dos `backend.exe` corriendo a la vez, uno con la conexión muerta). Ahora `ensureConnected()` hace `mysql_ping` bajo el mutex antes de cada consulta y reabre la conexión con los parámetros guardados (solo en memoria, nunca en el log). Verificado por el usuario. **Pendiente:** `executeQuery` devuelve un resultado vacío ante un error, así que `GET /interviews` responde `[]` con `success: true` en vez de un error.
 
 # Why it matters
 

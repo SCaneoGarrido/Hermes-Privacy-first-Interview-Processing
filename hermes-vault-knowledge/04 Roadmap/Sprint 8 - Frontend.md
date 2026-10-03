@@ -4,7 +4,7 @@ aliases: []
 tags: [roadmap, sprint, hermes]
 status: in-progress
 created: 2026-07-24
-updated: 2026-08-15
+updated: 2026-10-02
 source: README.md
 related: ["Sprint 7 - Export", "Sprint 9 - Configuration", "API First", "ADR-011 - Contrato de Respuesta API Uniforme", "Sprint 4 - Background Processing"]
 ---
@@ -26,6 +26,14 @@ Interfaz web en React para operar todo el pipeline de Hermes.
 - ✅ Checkbox opcional "Generar resumen" (`include_summary`), con aviso de que aumenta el tiempo de procesamiento
 - ✅ Descargas — `<a download>` directo a `/interview/:id/download/transcript` y `/download/summary` (no pasa por el cliente JSON, ver comentario en `frontend/src/api/interviews.ts`)
 - ❌ Configuración — depende de [[Sprint 9 - Configuration]], todavía no implementado; toda la config del backend es por variables de entorno
+
+**Actualización 2026-10-02 — rediseño y vista de lectura:**
+- ✅ **Identidad visual griega clásica** a partir de dos mockups (`docs/img/mockups/`): negro ático, terracota, marfil, azul Egeo y oro viejo; títulos epigráficos con serif del sistema (Palatino Linotype/Georgia); meandro como divisor; isotipo "H" con ala de talaria; íconos SVG propios. Modo oscuro y claro definidos (el claro sin revisión visual). Sin dependencias nuevas ni recursos de red.
+- ✅ **Lista** ("Corpus de entrevistas"): contadores, búsqueda/orden/filtros por estado en el cliente, tarjetas con una acción principal por estado, modal propio para borrar, refresco automático mientras algo procesa.
+- ✅ **Detalle por estado**: ficha, "secuencia de umbrales" I–VI para los pasos, zona de arrastrar y soltar con validación previa, confirmación al reemplazar audio, avisos de revisión junto a las descargas.
+- ✅ **Vista de lectura** `/interviews/:id/transcript` (ADR-019 en `.ai/DECISIONS.md`): portada con ficha y aviso de revisión, resumen, turnos por hablante o párrafos con marca de tiempo, panel con scroll propio, búsqueda con salto a la coincidencia, marcadores `[PERSONA_1]` resaltados, "Imprimir / Guardar PDF" con hoja de estilos de impresión.
+- Se descartaron del mockup los elementos sin dato real en la API (métricas inventadas, "cancelar procesamiento", consola de CPU, afirmaciones de "aislamiento criptográfico").
+- Limitación conocida: la API no dice con qué opciones se lanzó un job; el navegador recuerda las de los jobs que él lanzó y, si no las conoce, muestra los pasos opcionales como "Si se pidió".
 
 # Why it matters
 

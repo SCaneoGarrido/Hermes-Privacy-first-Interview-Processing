@@ -20,6 +20,19 @@ struct FileFormatGuard : crow::ILocalMiddleware {
     // Valida el Content-Type real del archivo enviado en el campo "file".
     void before_handle(crow::request& req, crow::response& res, auto& ctx) {
         try {
+            // VALIDACIÓN 0: tope de tamaño, antes de parsear el multipart -- el
+            // parseo copia el archivo completo, y con un video grande eso
+            // multiplica el uso de RAM. Crow ya recibio el body a esta altura;
+            // el frontend chequea el mismo tope antes de transferir.
+            if (req.body.size() > Config::MAX_UPLOAD_BYTES) {
+                std::stringstream log_error_ss;
+                log_error_ss << "[middlewares][FileFormatGuard] - archivo rechazado por tamaño: " << req.body.size() << " bytes";
+                log_event(log_error_ss.str());
+                res = ApiResponse::failure(413, "PAYLOAD_TOO_LARGE", "El archivo supera el tamaño maximo permitido (1 GB)");
+                res.end();
+                return;
+            }
+
             // El Content-Type del request es solo el "sobre" (multipart/form-data);
             // el formato real a validar es el de la parte "file" dentro del multipart.
             crow::multipart::message file_form(req);
@@ -46,7 +59,7 @@ struct FileFormatGuard : crow::ILocalMiddleware {
 
             // VALIDACIÓN 2: ¿El formato del archivo esta permitido?
             bool isValidFormat = false;
-            for (const auto& formato : Config::FORMATOS_AUDIO_PERMITIDOS) {
+            for (const auto& formato : Config::FORMATOS_PERMITIDOS) {
                 if (contentType == formato) {
                     isValidFormat = true;
                     break;
@@ -70,7 +83,7 @@ struct FileFormatGuard : crow::ILocalMiddleware {
                 std::stringstream log_error_ss;
                 log_error_ss << "[middlewares][FileFormatGuard] - el contenido no coincide con el formato declarado '" << contentType << "'";
                 log_event(log_error_ss.str());
-                res = ApiResponse::failure(400, "INVALID_FILE_CONTENT", "El archivo no es un audio valido del formato declarado");
+                res = ApiResponse::failure(400, "INVALID_FILE_CONTENT", "El archivo no es un audio o video valido del formato declarado");
                 res.end();
                 return;
             }

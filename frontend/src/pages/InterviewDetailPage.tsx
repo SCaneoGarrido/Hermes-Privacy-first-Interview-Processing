@@ -1,27 +1,37 @@
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
-import { useParams } from "react-router-dom";
+import { Link, useParams } from "react-router-dom";
 import { getInterview, processInterview, summaryDownloadUrl, transcriptDownloadUrl, uploadAudio } from "../api/interviews";
-import type { InterviewDetail, ProcessingStep, UploadAudioResponse } from "../api/types";
+import type { InterviewDetail, UploadAudioResponse } from "../api/types";
 import { ApiError } from "../api/client";
+import { ConfirmDialog } from "../components/ConfirmDialog";
+import { Dropzone } from "../components/Dropzone";
 import { ErrorBanner } from "../components/ErrorBanner";
+import {
+  AlertIcon,
+  ArrowLeftIcon,
+  ClockIcon,
+  DownloadIcon,
+  EyeIcon,
+  FileAudioIcon,
+  InfoIcon,
+  NoFileIcon,
+  PlayIcon,
+  ShieldIcon,
+  TempleIcon,
+} from "../components/Icons";
+import { KeywordsCard } from "../components/KeywordsCard";
 import { StatusBadge } from "../components/StatusBadge";
+import { ThresholdStepper } from "../components/ThresholdStepper";
+import { fileNameFromPath, formatBytes, formatClock, formatDuration, formatInterviewDate } from "../format";
+import { STEP_INFO, buildStepViews, readProcessOptions, rememberProcessOptions } from "../processingSteps";
 
-// Etiquetas legibles para current_step (ver InterviewProcessingJobHandler
-// en el backend). Un procesamiento real puede tardar 10-20+ minutos sin
-// esto - sin feedback intermedio, parece trabado aunque este funcionando.
-const STEP_LABELS: Record<ProcessingStep, string> = {
-  normalizando_audio: "Normalizando audio",
-  transcribiendo: "Transcribiendo con IA (whisper.cpp) — suele ser el paso más largo",
-  corrigiendo_texto: "Corrigiendo texto con IA",
-  anonimizando: "Anonimizando información personal",
-  generando_resumen: "Generando resumen",
+const LEDE: Record<InterviewDetail["status"], string> = {
+  pending_audio: "Falta subir el audio de la entrevista para poder transcribirla.",
+  pending_processing: "El audio está cargado. Elegí las opciones y enviala a procesar.",
+  processing: "Hermes está procesando la entrevista en este equipo.",
+  completed: "La transcripción está lista para descargar y revisar.",
+  failed: "El último procesamiento no pudo completarse.",
 };
-
-function formatElapsed(seconds: number): string {
-  const m = Math.floor(seconds / 60);
-  const s = seconds % 60;
-  return `${m}:${String(s).padStart(2, "0")}`;
-}
 
 export function InterviewDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -34,15 +44,17 @@ export function InterviewDetailPage() {
   const [uploadResult, setUploadResult] = useState<UploadAudioResponse | null>(null);
   const [uploadError, setUploadError] = useState<unknown>(null);
   const [uploading, setUploading] = useState(false);
+  const [confirmReplace, setConfirmReplace] = useState(false);
 
   const [processError, setProcessError] = useState<unknown>(null);
-  const [processNotice, setProcessNotice] = useState<string | null>(null);
   const [processing, setProcessing] = useState(false);
   const [includeSummary, setIncludeSummary] = useState(false);
+  const [enhanceTranscript, setEnhanceTranscript] = useState(false);
 
-  // Momento en que se detectó status="processing", para mostrar tiempo
-  // transcurrido. No usa execution_time_seconds (eso es del último job ya
-  // terminado) - esto es "cuánto lleva el que está corriendo ahora".
+  // Momento en que esta pagina detecto status="processing". La API no dice
+  // cuando arranco el job, asi que el cronometro mide desde que se esta
+  // observando y lo aclara en pantalla. No usa execution_time_seconds (eso
+  // es del ultimo job ya terminado).
   const processingSinceRef = useRef<number | null>(null);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
 
@@ -82,10 +94,21 @@ export function InterviewDetailPage() {
     };
   }, [detail?.status, loadDetail]);
 
-  const detailUnavailable = detailError instanceof ApiError && detailError.code === "NOT_FOUND";
+  const notFound = detailError instanceof ApiError && detailError.code === "NOT_FOUND";
 
-  async function handleUpload(event: FormEvent) {
+  function handleUploadSubmit(event: FormEvent) {
     event.preventDefault();
+    if (!file) return;
+    // Reemplazar descarta el audio y el resultado anteriores en el backend:
+    // se pide confirmacion explicita.
+    if (detail?.audio) {
+      setConfirmReplace(true);
+      return;
+    }
+    uploadFile();
+  }
+
+  async function uploadFile() {
     if (!file) return;
 
     setUploadError(null);
@@ -94,21 +117,22 @@ export function InterviewDetailPage() {
     try {
       const result = await uploadAudio(interviewId, file);
       setUploadResult(result);
+      setFile(null);
       loadDetail();
     } catch (err) {
       setUploadError(err);
     } finally {
       setUploading(false);
+      setConfirmReplace(false);
     }
   }
 
   async function handleProcess() {
     setProcessError(null);
-    setProcessNotice(null);
     setProcessing(true);
     try {
-      const result = await processInterview(interviewId, includeSummary);
-      setProcessNotice(`Estado actualizado a "${result.status}".`);
+      await processInterview(interviewId, includeSummary, enhanceTranscript);
+      rememberProcessOptions(interviewId, { includeSummary, enhanceTranscript });
       loadDetail();
     } catch (err) {
       setProcessError(err);
@@ -117,29 +141,34 @@ export function InterviewDetailPage() {
     }
   }
 
+  const status = detail?.status;
+  const isProcessing = status === "processing";
+
   return (
     <section>
-      <div className="page-header">
-        <h1>Entrevista #{interviewId}</h1>
-        {detail && <StatusBadge status={detail.status} />}
+      <div className="detail-topbar">
+        <nav className="breadcrumb" aria-label="Ruta">
+          <TempleIcon size={16} />
+          <Link to="/">Entrevistas</Link>
+          <span aria-hidden="true">/</span>
+          <span aria-current="page">Entrevista #{interviewId}</span>
+        </nav>
+        {detail && (
+          <StatusBadge
+            status={detail.status}
+            detail={isProcessing && detail.current_step ? STEP_INFO[detail.current_step].label : undefined}
+          />
+        )}
       </div>
 
-      {detail?.status === "processing" && (
-        <div className="banner banner-warning" role="status">
-          <p>
-            {detail.current_step ? STEP_LABELS[detail.current_step] : "Iniciando procesamiento…"} — en curso desde
-            hace {formatElapsed(elapsedSeconds)}. Los audios largos pueden tardar 10-20+ minutos, sobre todo en la
-            transcripción; esto no significa que quedó trabado.
-          </p>
-        </div>
-      )}
+      <h1 className="display-title">Entrevista #{interviewId}</h1>
+      {status && <p className="lede">{LEDE[status]}</p>}
 
-      {detailUnavailable ? (
-        <div className="banner banner-warning" role="status">
+      {notFound ? (
+        <div className="banner banner-error" role="alert">
+          <strong>No existe la entrevista #{interviewId}</strong>
           <p>
-            El backend todavía no expone <code>GET /interview/:id</code>, así que no se puede mostrar el detalle
-            completo (ver <code>docs/API_REQUIREMENTS.md</code>). Igual podés subir un audio y enviarlo a procesar
-            usando el id de la URL.
+            Puede que se haya eliminado. <Link to="/">Volver al corpus de entrevistas</Link>.
           </p>
         </div>
       ) : (
@@ -147,104 +176,295 @@ export function InterviewDetailPage() {
       )}
 
       {detail && (
-        <dl className="details-grid">
-          <dt>Fecha</dt>
-          <dd>{detail.date}</dd>
-          <dt>Tipo</dt>
-          <dd>{detail.type}</dd>
-          <dt>Sujeto</dt>
-          <dd>{detail.subject_type}</dd>
-        </dl>
-      )}
-
-      <div className="card">
-        <h2>Audio</h2>
-
-        {detail?.audio ? (
-          <p>
-            Audio asociado: <code>{detail.audio.path}</code> ({detail.audio.format}, {detail.audio.size} bytes)
-          </p>
-        ) : (
-          <p className="muted">Todavía no hay audio asociado a esta entrevista.</p>
-        )}
-
-        <form onSubmit={handleUpload} className="form form-inline">
-          <input
-            type="file"
-            accept="audio/mpeg,audio/wav,audio/ogg,audio/x-m4a,.mp3,.wav,.ogg,.m4a"
-            onChange={(e) => setFile(e.target.files?.[0] ?? null)}
-          />
-          <button type="submit" disabled={!file || uploading}>
-            {uploading ? "Subiendo…" : "Subir audio"}
-          </button>
-        </form>
-
-        <ErrorBanner error={uploadError} />
-        {uploadResult && (
-          <div className="banner banner-success" role="status">
-            <p>
-              Audio guardado en <code>{uploadResult.path}</code>.
-            </p>
+        <div className="card record-card">
+          <div className="card-heading">
+            <h2 className="section-title">Ficha de la entrevista</h2>
           </div>
-        )}
-      </div>
-
-      <div className="card">
-        <h2>Procesamiento</h2>
-        <p className="muted">
-          Dispara la transcripción de la entrevista. Requiere que ya haya un audio asociado.
-        </p>
-
-        <label>
-          <input
-            type="checkbox"
-            checked={includeSummary}
-            onChange={(e) => setIncludeSummary(e.target.checked)}
-          />{" "}
-          Generar resumen
-        </label>
-        {includeSummary && (
-          <p className="muted">
-            El resumen es opcional y puede aumentar el tiempo de procesamiento en ~30% (llamadas adicionales al
-            modelo local de IA sobre la entrevista ya corregida).
-          </p>
-        )}
-
-        <button onClick={handleProcess} disabled={processing}>
-          {processing ? "Enviando…" : "Enviar a procesar"}
-        </button>
-
-        <ErrorBanner error={processError} />
-        {processNotice && (
-          <div className="banner banner-success" role="status">
-            <p>{processNotice}</p>
-          </div>
-        )}
-
-        {detail?.execution_time_seconds != null && (
-          <p className="muted">Último procesamiento: {detail.execution_time_seconds} segundos.</p>
-        )}
-      </div>
-
-      {detail?.result && (
-        <div className="card">
-          <h2>Resultado</h2>
-          <p>
-            <a href={transcriptDownloadUrl(interviewId)} download>
-              Descargar transcripción (.txt)
-            </a>
-          </p>
-          {detail.result.summary_file_path ? (
-            <p>
-              <a href={summaryDownloadUrl(interviewId)} download>
-                Descargar resumen (.txt)
-              </a>
-            </p>
-          ) : (
-            <p className="muted">Sin resumen generado (no se pidió al procesar).</p>
-          )}
+          <dl className="record-grid">
+            <div>
+              <dt>Fecha y hora</dt>
+              <dd>{formatInterviewDate(detail.date)}</dd>
+            </div>
+            <div>
+              <dt>Tipo de entrevista</dt>
+              <dd>{detail.type}</dd>
+            </div>
+            <div>
+              <dt>Sujeto</dt>
+              <dd>{detail.subject_type}</dd>
+            </div>
+            <div>
+              <dt>Audio</dt>
+              {detail.audio ? (
+                <dd>
+                  <span className="record-file" title={detail.audio.path}>
+                    {fileNameFromPath(detail.audio.path)}
+                  </span>
+                  <span className="record-meta mono">
+                    {detail.audio.format} · {formatBytes(detail.audio.size)}
+                  </span>
+                </dd>
+              ) : (
+                <dd className="muted record-empty">
+                  <NoFileIcon size={16} /> Sin archivo cargado
+                </dd>
+              )}
+            </div>
+          </dl>
         </div>
       )}
+
+      {detail && isProcessing && <ProcessingView detail={detail} elapsedSeconds={elapsedSeconds} />}
+
+      {detail && !isProcessing && (
+        <>
+          {status === "failed" && (
+            <div className="card failure-card" role="alert">
+              <div className="card-heading">
+                <AlertIcon size={20} />
+                <h2 className="section-title">No se pudo completar el procesamiento</h2>
+              </div>
+              <p>
+                El motivo queda registrado en el log del backend (<code>API.log</code>). Causas habituales: el archivo
+                de audio está dañado, falta el modelo de whisper.cpp, o el backend se reinició a mitad del proceso.
+                Podés reintentarlo más abajo.
+              </p>
+            </div>
+          )}
+
+          {detail.result && (
+            <ResultCard
+              interviewId={interviewId}
+              hasSummary={!!detail.result.summary_file_path}
+              executionSeconds={detail.execution_time_seconds}
+            />
+          )}
+
+          <div className="card">
+            <div className="card-heading">
+              <FileAudioIcon size={20} />
+              <h2 className="section-title">{detail.audio ? "Reemplazar audio" : "Subir audio"}</h2>
+            </div>
+            <form onSubmit={handleUploadSubmit} className="stack">
+              <Dropzone file={file} onFileChange={setFile} compact={!!detail.audio} />
+              {detail.audio && (
+                <p className="muted small">
+                  Reemplazar el audio borra el archivo actual{detail.result ? ", la transcripción y el resumen" : ""}.
+                  Vas a tener que volver a procesar la entrevista.
+                </p>
+              )}
+              {file && (
+                <button type="submit" className="btn btn-primary" disabled={uploading}>
+                  {uploading ? "Subiendo…" : detail.audio ? "Reemplazar audio" : "Subir archivo"}
+                </button>
+              )}
+            </form>
+            <ErrorBanner error={uploadError} />
+            {uploadResult && (
+              <div className="banner banner-success" role="status">
+                <p>Audio guardado: {uploadResult.filename}.</p>
+              </div>
+            )}
+          </div>
+
+          <KeywordsCard interviewId={interviewId} saved={detail.keywords ?? []} onSaved={loadDetail} />
+
+          <div className="card">
+            <div className="card-heading">
+              <PlayIcon size={20} />
+              <h2 className="section-title">Procesamiento</h2>
+            </div>
+
+            {!detail.audio && <p className="muted">Primero subí el audio de la entrevista.</p>}
+
+            <div className="option-list">
+              <label className="option">
+                <input
+                  type="checkbox"
+                  className="switch"
+                  checked={enhanceTranscript}
+                  onChange={(e) => setEnhanceTranscript(e.target.checked)}
+                />
+                <span>
+                  <span className="option-title">
+                    Corregir y anonimizar con IA <span className="tag">Experimental</span>
+                  </span>
+                  <span className="option-hint">
+                    Etiqueta hablantes y reemplaza nombres por marcadores. Todavía puede reemplazar términos comunes
+                    (ej. "paciente") y omitir nombres. Sin esta opción la transcripción sale tal cual la produce
+                    whisper, <strong>sin anonimizar</strong>.
+                  </span>
+                </span>
+              </label>
+              <label className="option">
+                <input
+                  type="checkbox"
+                  className="switch"
+                  checked={includeSummary}
+                  onChange={(e) => setIncludeSummary(e.target.checked)}
+                />
+                <span>
+                  <span className="option-title">Generar resumen</span>
+                  <span className="option-hint">
+                    Se genera con el modelo local de IA y se descarga como un documento aparte. Aumenta el tiempo de
+                    procesamiento.
+                  </span>
+                </span>
+              </label>
+            </div>
+
+            <p className="muted expectation">
+              <ClockIcon size={16} /> Todo corre en la CPU de este equipo: una entrevista de una hora puede tardar 20
+              minutos o más.
+            </p>
+
+            <button
+              type="button"
+              className="btn btn-primary"
+              onClick={handleProcess}
+              disabled={processing || !detail.audio}
+            >
+              <PlayIcon />
+              {processing
+                ? "Enviando…"
+                : status === "failed"
+                  ? "Reintentar procesamiento"
+                  : status === "completed"
+                    ? "Volver a procesar"
+                    : "Enviar a procesar"}
+            </button>
+            <ErrorBanner error={processError} />
+          </div>
+        </>
+      )}
+
+      {confirmReplace && detail?.audio && file && (
+        <ConfirmDialog
+          title="¿Reemplazar el audio?"
+          message={`Se borra el audio actual (${fileNameFromPath(detail.audio.path)})${
+            detail.result ? " junto con la transcripción y el resumen generados" : ""
+          }. Esta acción no se puede deshacer.`}
+          confirmLabel="Reemplazar"
+          busy={uploading}
+          busyLabel="Subiendo…"
+          onConfirm={uploadFile}
+          onCancel={() => setConfirmReplace(false)}
+        />
+      )}
+
+      <div className="detail-footer">
+        <Link to="/" className="back-link">
+          <ArrowLeftIcon /> Regresar al corpus de entrevistas
+        </Link>
+      </div>
     </section>
+  );
+}
+
+function ProcessingView({ detail, elapsedSeconds }: { detail: InterviewDetail; elapsedSeconds: number }) {
+  const steps = buildStepViews(detail.current_step, detail.keywords?.length ?? 0, readProcessOptions(detail.id));
+
+  return (
+    <>
+      <div className="section-header">
+        <h2 className="section-title">
+          <span className="section-dot" aria-hidden="true" /> Secuencia de umbrales
+        </h2>
+        <span className="muted small">
+          {detail.current_step ? `En curso: ${STEP_INFO[detail.current_step].label}` : "Iniciando procesamiento…"}
+        </span>
+      </div>
+      <ThresholdStepper steps={steps} />
+
+      <div className="processing-grid">
+        <div className="card timer-card">
+          <div className="card-heading">
+            <ClockIcon size={20} />
+            <h2 className="section-title">Tiempo observado</h2>
+          </div>
+          <div className="timer-display" role="timer" aria-live="off">
+            <span className="timer-value">{formatClock(elapsedSeconds)}</span>
+            <span className="timer-caption">Contado desde que abriste esta página</span>
+          </div>
+          <p className="timer-footer">
+            <span className="live-dot" aria-hidden="true" /> Actualización automática cada 4 s
+          </p>
+        </div>
+
+        <div className="processing-side">
+          <div className="card">
+            <div className="card-heading">
+              <InfoIcon size={20} />
+              <h2 className="section-title">Mientras tanto</h2>
+            </div>
+            <p className="guide-text">
+              Una entrevista de una hora suele tardar <strong>20 minutos o más</strong>, sobre todo durante la
+              transcripción. Que un paso demore no significa que el proceso esté trabado.
+            </p>
+            <div className="inset-note">
+              <strong>Podés cerrar esta pestaña</strong>
+              <p>
+                El procesamiento sigue en el backend de este equipo. Cuando vuelvas, vas a ver en qué paso está.
+              </p>
+            </div>
+          </div>
+
+          <div className="card privacy-note">
+            <ShieldIcon size={20} />
+            <p>
+              <strong>Procesamiento local.</strong> El audio y el texto se procesan en este equipo con whisper.cpp y
+              Ollama; no se envían a servicios externos.
+            </p>
+          </div>
+        </div>
+      </div>
+    </>
+  );
+}
+
+interface ResultCardProps {
+  interviewId: number;
+  hasSummary: boolean;
+  executionSeconds: number | null;
+}
+
+function ResultCard({ interviewId, hasSummary, executionSeconds }: ResultCardProps) {
+  return (
+    <div className="card result-card">
+      <div className="card-heading">
+        <DownloadIcon size={20} />
+        <h2 className="section-title">Resultado</h2>
+        {executionSeconds != null && (
+          <span className="muted small heading-aside">Procesado en {formatDuration(executionSeconds)}</span>
+        )}
+      </div>
+
+      <div className="result-actions">
+        <Link to={`/interviews/${interviewId}/transcript`} className="btn btn-primary">
+          <EyeIcon /> Leer transcripción
+        </Link>
+        <a href={transcriptDownloadUrl(interviewId)} download className="btn btn-secondary">
+          <DownloadIcon /> Descargar .txt
+        </a>
+        {hasSummary ? (
+          <a href={summaryDownloadUrl(interviewId)} download className="btn btn-secondary">
+            <DownloadIcon /> Descargar resumen (.txt)
+          </a>
+        ) : (
+          <span className="muted small">Sin resumen (no se pidió o no se pudo generar).</span>
+        )}
+      </div>
+
+      <div className="banner banner-warning review-warning" role="note">
+        <AlertIcon size={18} />
+        <div>
+          <strong>Revisá el texto antes de compartirlo</strong>
+          <p>
+            Si no activaste "Corregir y anonimizar", la transcripción no está anonimizada. Si lo activaste, la
+            anonimización automática puede omitir nombres; y si falló, la primera línea del archivo lo indica.
+          </p>
+        </div>
+      </div>
+    </div>
   );
 }

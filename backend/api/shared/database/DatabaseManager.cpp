@@ -49,7 +49,41 @@ void DatabaseManager::initializeGlobal(const std::string& host, const std::strin
     if (!mysql_real_connect(instancia.connection.get(), host.c_str(), user.c_str(), pass.c_str(), db.c_str(), port, nullptr, 0)) {
         throw DatabaseException(std::string("Fallo en la conexión: ") + mysql_error(instancia.connection.get()));
     }
+    instancia.rememberConnectionParams(host, user, pass, db, port);
     log_event("[DatabaseManager][initializeGlobal] Conexión estática global establecida con éxito.");
+}
+
+void DatabaseManager::rememberConnectionParams(const std::string& host, const std::string& user, const std::string& pass, const std::string& db, int port) {
+    m_host = host;
+    m_user = user;
+    m_pass = pass;
+    m_db = db;
+    m_port = port;
+    m_hasConnectionParams = true;
+}
+
+void DatabaseManager::ensureConnected() {
+    if (!m_hasConnectionParams || mysql_ping(connection.get()) == 0) {
+        return;
+    }
+
+    log_event(std::string("[DatabaseManager][ensureConnected] Conexion perdida (") + mysql_error(connection.get()) +
+              "), reconectando a " + m_host + ":" + std::to_string(m_port));
+
+    std::unique_ptr<MYSQL, MysqlDeleter> fresh(mysql_init(nullptr));
+    if (!fresh) {
+        log_event("[DatabaseManager][ensureConnected] No se pudo inicializar una conexion nueva");
+        return;
+    }
+    if (!mysql_real_connect(fresh.get(), m_host.c_str(), m_user.c_str(), m_pass.c_str(), m_db.c_str(), m_port, nullptr, 0)) {
+        // Se conserva la conexion vieja: la query de este request falla y la
+        // siguiente vuelve a intentar reconectar.
+        log_event(std::string("[DatabaseManager][ensureConnected] Fallo la reconexion: ") + mysql_error(fresh.get()));
+        return;
+    }
+
+    connection = std::move(fresh);
+    log_event("[DatabaseManager][ensureConnected] Reconexion exitosa");
 }
 
 // Retorna el objeto listo para usar (Garantiza una única instancia/Singleton)
@@ -66,6 +100,7 @@ void DatabaseManager::connect(const std::string& host, const std::string& user, 
         log_event("[DatabaseManager][connect] Fallo la conexion a " + host + ":" + std::to_string(port) + ". Detalle: " + error);
         throw DatabaseException("Fallo en la conexión a la BD: " + error);
     }
+    rememberConnectionParams(host, user, pass, db, port);
 
     std::stringstream log_ss;
     log_ss << "[DatabaseManager][connect] Conectado exitosamente a " << host << ":" << port << " (BD: " << db << ")";
@@ -125,6 +160,7 @@ std::optional<uint64_t> DatabaseManager::executePrepared(const std::string& quer
     // Serializa el acceso a la unica conexion MYSQL*: ver comentario en
     // DatabaseManager.h sobre por que esto es necesario con Crow multithreaded.
     std::lock_guard<std::mutex> lock(m_dbMutex);
+    ensureConnected();
 
     std::unique_ptr<MYSQL_STMT, StmtDeleter> stmt(mysql_stmt_init(connection.get()));
     if (!stmt) return std::nullopt;
@@ -190,6 +226,7 @@ std::vector<std::vector<SqlParam>> DatabaseManager::executeQuery(
     // Serializa el acceso a la unica conexion MYSQL*: ver comentario en
     // DatabaseManager.h sobre por que esto es necesario con Crow multithreaded.
     std::lock_guard<std::mutex> lock(m_dbMutex);
+    ensureConnected();
 
     std::vector<std::vector<SqlParam>> filas_resultado;
 

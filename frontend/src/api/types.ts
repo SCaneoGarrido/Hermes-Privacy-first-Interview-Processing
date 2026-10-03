@@ -33,6 +33,7 @@ export interface InterviewResult {
 export type ProcessingStep =
   | "normalizando_audio"
   | "transcribiendo"
+  | "aplicando_glosario"
   | "corrigiendo_texto"
   | "anonimizando"
   | "generando_resumen";
@@ -42,6 +43,12 @@ export interface InterviewDetail extends Interview {
   result: InterviewResult | null;
   execution_time_seconds: number | null;
   current_step: ProcessingStep | null;
+  keywords: string[];
+}
+
+export interface UpdateKeywordsResponse {
+  id: number;
+  keywords: string[];
 }
 
 export interface CreateInterviewPayload {
@@ -65,9 +72,27 @@ export interface ProcessInterviewResponse {
   id: number;
   status: InterviewStatus;
   include_summary: boolean;
+  enhance_transcript: boolean;
 }
 
 export interface DeleteInterviewResponse {
   id: number;
   code: string;
+}
+
+// GET /interview/:id/transcript -- transcripcion estructurada para leer en
+// la app (ver TranscriptDocumentBuilder en el backend).
+export interface TranscriptBlock {
+  speaker: string | null;
+  start: number | null; // segundo del audio; solo en texto plano de whisper
+  text: string;
+}
+
+export interface TranscriptDocument {
+  id: number;
+  has_speakers: boolean;
+  has_timestamps: boolean;
+  notice: string | null; // aviso del pipeline si la anonimizacion pedida fallo
+  summary: string | null;
+  blocks: TranscriptBlock[];
 }

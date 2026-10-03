@@ -50,6 +50,22 @@ class DatabaseManager {
         // complejidad que este proyecto no necesita todavia.
         std::mutex m_dbMutex;
 
+        // Parametros de la ultima conexion exitosa, para poder reconectar si
+        // MySQL se reinicia (p.ej. "docker compose restart"): sin esto la
+        // conexion queda muerta ("Server has gone away") hasta reiniciar el
+        // backend. Solo viven en memoria, nunca se loguean.
+        std::string m_host;
+        std::string m_user;
+        std::string m_pass;
+        std::string m_db;
+        int m_port = 0;
+        bool m_hasConnectionParams = false;
+
+        void rememberConnectionParams(const std::string& host, const std::string& user, const std::string& pass, const std::string& db, int port);
+        // Verifica la conexion con mysql_ping y, si se perdio, abre una nueva.
+        // Debe llamarse con m_dbMutex tomado.
+        void ensureConnected();
+
     public:
         DatabaseManager();
         ~DatabaseManager() = default;

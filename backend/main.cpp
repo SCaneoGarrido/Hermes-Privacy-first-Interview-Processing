@@ -84,7 +84,8 @@ int main()
     hermes::audio::FfmpegAudioNormalizer        audioNormalizer;
     hermes::transcription::WhisperTranscriber   transcriber(
         env_or("WHISPER_MODEL_PATH", std::string(Config::DEFAULT_WHISPER_MODEL_PATH)),
-        env_or("WHISPER_LANGUAGE", "es"));
+        env_or("WHISPER_LANGUAGE", "es"),
+        env_or("WHISPER_VAD_MODEL_PATH", std::string(Config::DEFAULT_WHISPER_VAD_MODEL_PATH)));
 
     // Sprint 6 - Ollama Integration: correccion+estructuracion,
     // anonimizacion y resumen sobre la transcripcion de Sprint 5. Sin
@@ -94,8 +95,9 @@ int main()
         env_or("OLLAMA_BASE_URL", "http://localhost:11434"),
         env_or("OLLAMA_MODEL", "qwen2.5:7b"));
     hermes::llm::TranscriptEnhancer             transcriptEnhancer(ollamaClient);
+    hermes::llm::GlossarySanitizer              glossarySanitizer(ollamaClient);
 
-    hermes::jobs::InterviewProcessingJobHandler jobHandler(interviewRepository, jobRepository, audioNormalizer, transcriber, transcriptEnhancer);
+    hermes::jobs::InterviewProcessingJobHandler jobHandler(interviewRepository, jobRepository, audioNormalizer, transcriber, glossarySanitizer, transcriptEnhancer);
     const int workerPoolSize = std::stoi(env_or("WORKER_POOL_SIZE", "1"));
     hermes::jobs::WorkerPool                    workerPool(jobQueue, jobHandler, jobRepository, workerPoolSize);
 
@@ -136,6 +138,14 @@ int main()
 
     CROW_ROUTE(app, "/api/v1/interview/<int>/process").methods(crow::HTTPMethod::POST)([&interviewController](const crow::request& req, int id) {
         return interviewController.processInterview(req, id);
+    });
+
+    CROW_ROUTE(app, "/api/v1/interview/<int>/keywords").methods(crow::HTTPMethod::PUT)([&interviewController](const crow::request& req, int id) {
+        return interviewController.updateKeywords(req, id);
+    });
+
+    CROW_ROUTE(app, "/api/v1/interview/<int>/transcript").methods(crow::HTTPMethod::GET)([&interviewController](int id) {
+        return interviewController.getTranscript(id);
     });
 
     CROW_ROUTE(app, "/api/v1/interview/<int>/download/transcript").methods(crow::HTTPMethod::GET)([&interviewController](int id) {

@@ -11,14 +11,14 @@
 #include <boost/uuid/uuid_generators.hpp> // GENERATORS
 #include <boost/uuid/uuid_io.hpp> //STREAM input/output
 
-std::tuple<std::string, std::string, int> validateFileInformation(crow::multipart::message& file_form) {
+std::tuple<std::string, std::string, long long> validateFileInformation(crow::multipart::message& file_form) {
     std::string file_content = "";
     std::string filename     = "";
     auto file_part = file_form.get_part_by_name("file");
     file_content = file_part.body;
     auto header_info = file_part.get_header_object("Content-Disposition");
     filename = header_info.params.count("filename") ? header_info.params["filename"] : "Desconocido";
-    int bytes_size = file_content.size();
+    long long bytes_size = static_cast<long long>(file_content.size());
     // LOG EXITOSO
     std::stringstream log_ss;
     log_ss << "[Helpers][validateFileInformation]  Archivo recibido con exito. "

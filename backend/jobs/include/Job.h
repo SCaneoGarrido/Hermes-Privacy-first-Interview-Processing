@@ -20,6 +20,12 @@ struct Job {
     // son), y agrega ~30% de llamadas a Ollama sobre el total. Default
     // false: el researcher lo prende cuando lo quiere.
     bool includeSummary = false;
+    // Correccion + etiquetado de hablante + anonimizacion via Ollama (Fases
+    // 1-2 de Sprint 6). Opt-in desde ADR-017: en la validacion manual de la
+    // entrevista 13 la anonimizacion reemplazo sustantivos comunes y la
+    // correccion perdio texto, y el investigador ya excluye la PII antes de
+    // grabar. Default false: la salida es la transcripcion plana de whisper.
+    bool enhanceTranscript = false;
 };
 
 }  // namespace hermes::jobs

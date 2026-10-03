@@ -49,7 +49,21 @@ export function NewInterviewPage() {
 
   return (
     <section className="form-section">
-      <h1>Nueva entrevista</h1>
+      <p className="eyebrow">Nueva entrevista</p>
+      <h1 className="display-title">Registrar entrevista</h1>
+      <p className="lede">Cargá sus datos; en el paso siguiente vas a subir el audio y enviarla a procesar.</p>
+
+      <ol className="wizard-steps" aria-label="Pasos">
+        <li className="wizard-step wizard-step-current" aria-current="step">
+          <span className="wizard-numeral">I</span> Datos
+        </li>
+        <li className="wizard-step">
+          <span className="wizard-numeral">II</span> Audio
+        </li>
+        <li className="wizard-step">
+          <span className="wizard-numeral">III</span> Procesar
+        </li>
+      </ol>
 
       <ErrorBanner error={error} />
       {notice && (
@@ -58,7 +72,7 @@ export function NewInterviewPage() {
         </div>
       )}
 
-      <form onSubmit={handleSubmit} className="form">
+      <form onSubmit={handleSubmit} className="form card">
         <label>
           Fecha y hora
           <input type="datetime-local" required value={date} onChange={(e) => setDate(e.target.value)} />
@@ -86,8 +100,8 @@ export function NewInterviewPage() {
           />
         </label>
 
-        <button type="submit" disabled={submitting}>
-          {submitting ? "Creando…" : "Crear entrevista"}
+        <button type="submit" className="btn btn-primary" disabled={submitting}>
+          {submitting ? "Creando…" : "Crear y continuar"}
         </button>
       </form>
     </section>

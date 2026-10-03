@@ -1,11 +1,14 @@
 #pragma once
 
+#include <filesystem>
+
 #include "IJobHandler.h"
 #include "IInterviewJobRepository.h"
 #include "../../api/include/repositories/IInterviewRepository.h"
 #include "../../audio/include/IAudioNormalizer.h"
 #include "../../transcription/include/ITranscriber.h"
 #include "../../llm/include/TranscriptEnhancer.h"
+#include "../../llm/include/GlossarySanitizer.h"
 
 namespace hermes::jobs {
 
@@ -26,15 +29,29 @@ class InterviewProcessingJobHandler : public IJobHandler {
                                        IInterviewJobRepository& jobRepository,
                                        hermes::audio::IAudioNormalizer& audioNormalizer,
                                        hermes::transcription::ITranscriber& transcriber,
+                                       hermes::llm::GlossarySanitizer& glossarySanitizer,
                                        hermes::llm::TranscriptEnhancer& transcriptEnhancer);
 
         void execute(const Job& job) override;
 
     private:
+        // Si la fuente era un video: deja el audio extraido como nueva fuente
+        // de la entrevista y borra el video (no se retiene, ver ADR-016).
+        void replaceVideoWithExtractedAudio(int interviewId, const InterviewAudioRecord& video, const std::string& normalizedPath);
+
+        // Corrige en `segments` las variantes de los terminos del glosario
+        // (ADR-018) y deja el detalle en glossary_changes.txt. Si Ollama
+        // falla, `segments` queda como vino de whisper.
+        void applyGlossary(int interviewId,
+                           const std::vector<std::string>& keywords,
+                           const std::filesystem::path& interviewDir,
+                           std::vector<hermes::transcription::TranscriptSegment>& segments);
+
         IInterviewRepository& m_interviewRepository;
         IInterviewJobRepository& m_jobRepository;
         hermes::audio::IAudioNormalizer& m_audioNormalizer;
         hermes::transcription::ITranscriber& m_transcriber;
+        hermes::llm::GlossarySanitizer& m_glossarySanitizer;
         hermes::llm::TranscriptEnhancer& m_transcriptEnhancer;
 };
 

@@ -1,6 +1,7 @@
 #include "../../include/repositories/MySqlInterviewRepository.h"
 #include "../../include/logger.h"
 
+#include <sstream>
 #include <vector>
 
 MySqlInterviewRepository::MySqlInterviewRepository(DatabaseManager& db) : m_db(db) {}
@@ -140,10 +141,50 @@ bool MySqlInterviewRepository::updateStatus(int id, const std::string& status) {
     return result.has_value();
 }
 
+bool MySqlInterviewRepository::updateKeywords(int id, const std::vector<std::string>& keywords) {
+    // Un termino por linea: InterviewService garantiza que ninguno contiene
+    // saltos de linea.
+    std::string joined;
+    for (const auto& keyword : keywords) {
+        if (!joined.empty()) joined += "\n";
+        joined += keyword;
+    }
+    std::vector<SqlParam> params = {joined, id};
+    auto result = m_db.executePrepared("UPDATE interviews SET keywords = ? WHERE id = ?", params);
+    return result.has_value();
+}
+
+std::vector<std::string> MySqlInterviewRepository::findKeywordsByInterviewId(int id) {
+    std::vector<SqlParam> idParam = {id};
+    auto rows = m_db.executeQuery("SELECT keywords FROM interviews WHERE id = ?", idParam);
+
+    std::vector<std::string> keywords;
+    if (rows.empty() || rows[0].size() != 1) {
+        return keywords;
+    }
+    // NULL llega como string vacio (ver executeQuery).
+    std::istringstream stream(std::get<std::string>(rows[0][0]));
+    std::string line;
+    while (std::getline(stream, line)) {
+        if (!line.empty()) keywords.push_back(line);
+    }
+    return keywords;
+}
+
 bool MySqlInterviewRepository::insertAudio(int interviewId, const std::string& path, const std::string& format, long long size) {
     std::string query =
         "INSERT INTO interviews_audio (interview_audio_path, interview_audio_format, interview_audio_size, interview_id, created_at) "
         "VALUES (?, ?, ?, ?, NOW())";
+    std::vector<SqlParam> params = {path, format, size, interviewId};
+
+    auto result = m_db.executePrepared(query, params);
+    return result.has_value();
+}
+
+bool MySqlInterviewRepository::updateAudio(int interviewId, const std::string& path, const std::string& format, long long size) {
+    std::string query =
+        "UPDATE interviews_audio SET interview_audio_path = ?, interview_audio_format = ?, interview_audio_size = ? "
+        "WHERE interview_id = ?";
     std::vector<SqlParam> params = {path, format, size, interviewId};
 
     auto result = m_db.executePrepared(query, params);
@@ -166,6 +207,12 @@ bool MySqlInterviewRepository::updateSummaryPath(int interviewId, const std::str
     auto result = m_db.executePrepared(
         "UPDATE interview_results SET summary_file_path = ? WHERE interview_id = ?",
         params);
+    return result.has_value();
+}
+
+bool MySqlInterviewRepository::removeResults(int interviewId) {
+    std::vector<SqlParam> params = {interviewId};
+    auto result = m_db.executePrepared("DELETE FROM interview_results WHERE interview_id = ?", params);
     return result.has_value();
 }
 

@@ -1,4 +1,5 @@
 #include "../include/TranscriptEnhancer.h"
+#include "../include/TextUtils.h"
 #include "../../api/include/logger.h"
 
 #include <algorithm>
@@ -26,12 +27,9 @@ constexpr size_t CHARS_PER_TEXT_CHUNK = 3000;
 // el primer turno es "Investigador" en cada bloque.
 constexpr int CONTINUITY_LINES = 3;
 
-std::string trim(const std::string& text) {
-    const size_t first = text.find_first_not_of(" \t\r\n");
-    if (first == std::string::npos) return "";
-    const size_t last = text.find_last_not_of(" \t\r\n");
-    return text.substr(first, last - first + 1);
-}
+using text::levenshtein;
+using text::toLower;
+using text::trim;
 
 std::vector<std::string> splitLines(const std::string& text) {
     std::vector<std::string> lines;
@@ -98,27 +96,6 @@ std::vector<Entity> parseEntities(const std::string& response) {
     return entities;
 }
 
-std::string toLower(std::string s) {
-    std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c) { return std::tolower(c); });
-    return s;
-}
-
-// Distancia de edicion entre dos strings, usada para mapear variantes de
-// etiqueta a la canonica mas parecida (ver abajo).
-size_t levenshtein(const std::string& a, const std::string& b) {
-    std::vector<size_t> prev(b.size() + 1), curr(b.size() + 1);
-    for (size_t j = 0; j <= b.size(); ++j) prev[j] = j;
-    for (size_t i = 1; i <= a.size(); ++i) {
-        curr[0] = i;
-        for (size_t j = 1; j <= b.size(); ++j) {
-            const size_t cost = (a[i - 1] == b[j - 1]) ? 0 : 1;
-            curr[j] = std::min({prev[j] + 1, curr[j - 1] + 1, prev[j - 1] + cost});
-        }
-        std::swap(prev, curr);
-    }
-    return prev[b.size()];
-}
-
 const std::vector<std::string> CANONICAL_LABELS_LOWER = {"investigador", "entrevistado"};
 const std::vector<std::string> CANONICAL_LABELS = {"Investigador", "Entrevistado"};
 
@@ -160,19 +137,46 @@ std::string normalizeSpeakerLabel(const std::string& line) {
 TranscriptEnhancer::TranscriptEnhancer(ILLMClient& client) : m_client(client) {}
 
 EnhancementResult TranscriptEnhancer::enhance(const std::vector<hermes::transcription::TranscriptSegment>& segments,
+                                               bool enhanceTranscript,
                                                bool includeSummary,
                                                const ProgressCallback& onProgress) {
     EnhancementResult result;
+
+    if (!enhanceTranscript) {
+        if (includeSummary) {
+            // Mismo texto que transcript_final.txt: un segmento por linea.
+            std::string plainText;
+            for (const auto& segment : segments) {
+                plainText += trim(segment.text) + "\n";
+            }
+            if (onProgress) onProgress("generando_resumen");
+            try {
+                result.summary = summarize(plainText);
+            } catch (const std::exception& e) {
+                result.failure = std::string("resumen: ") + e.what();
+            }
+        }
+        return result;
+    }
 
     if (onProgress) onProgress("corrigiendo_texto");
     result.correctedTranscript = correctAndStructure(segments);
 
     if (onProgress) onProgress("anonimizando");
-    result.anonymizedTranscript = anonymize(result.correctedTranscript);
+    try {
+        result.anonymizedTranscript = anonymize(result.correctedTranscript);
+    } catch (const std::exception& e) {
+        result.failure = std::string("anonimizacion: ") + e.what();
+        return result;
+    }
 
     if (includeSummary) {
         if (onProgress) onProgress("generando_resumen");
-        result.summary = summarize(result.anonymizedTranscript);
+        try {
+            result.summary = summarize(result.anonymizedTranscript);
+        } catch (const std::exception& e) {
+            result.failure = std::string("resumen: ") + e.what();
+        }
     }
     return result;
 }

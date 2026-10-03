@@ -4,7 +4,7 @@ aliases: []
 tags: [roadmap, sprint, hermes]
 status: in-progress
 created: 2026-07-24
-updated: 2026-07-28
+updated: 2026-10-02
 source: README.md
 related: ["Sprint 2 - Persistence", "Sprint 4 - Background Processing", "ADR-011 - Contrato de Respuesta API Uniforme"]
 ---
@@ -23,6 +23,13 @@ Carga de audios de entrevistas mediante upload multipart.
 - ✅ Organización de archivos (`./uploads`, `Config::UPLOAD_DIRECTORY`)
 - ✅ Identificadores únicos (UUID vía `boost::uuid`, nombre del archivo guardado)
 - ❌ Progreso de subida (no aplica a un upload síncrono simple; queda para cuando exista cola de trabajos)
+
+**Actualización 2026-10-02 — reemplazo de audio y archivos huérfanos:**
+- Bug encontrado en `API.log`: subir un segundo audio a la misma entrevista fallaba con `Duplicate entry` (UNIQUE `interview_id` en `interviews_audio`). Como el archivo se guardaba en disco **antes** del INSERT, cada upload fallido quedaba huérfano: se encontraron 12 de 13 archivos (~535 MB) sin registro, borrados con aprobación del usuario.
+- ✅ `InterviewService::canAttachAudio` valida antes de escribir: `404 NOT_FOUND` si la entrevista no existe, `409 INTERVIEW_BUSY` si está procesando o tiene un job encolado.
+- ✅ Reemplazo: si ya había audio se actualiza la fila, se borra el archivo anterior y se descarta el resultado previo (`interview_results` + `storage/interviews/<id>`). El frontend pide confirmación.
+- ✅ Todo upload rechazado se borra del disco.
+- ✅ Eliminar una entrevista ahora también borra `storage/interviews/<id>`.
 
 # Why it matters
 

@@ -20,8 +20,9 @@ namespace AudioSignature {
         return content.size() >= 4 && content.substr(0, 4) == "OggS";
     }
 
-    // Contenedor MPEG-4 (usado por .m4a): box "ftyp" en el offset 4.
-    inline bool matchesM4a(std::string_view content) {
+    // Contenedor ISO-BMFF / MPEG-4 (compartido por .m4a y .mp4): box "ftyp"
+    // en el offset 4.
+    inline bool matchesIsoBmff(std::string_view content) {
         return content.size() >= 8 && content.substr(4, 4) == "ftyp";
     }
 
@@ -41,7 +42,8 @@ namespace AudioSignature {
     inline bool isValid(std::string_view contentType, std::string_view content) {
         if (contentType == Config::MIME_WAV) return matchesWav(content);
         if (contentType == Config::MIME_OGG) return matchesOgg(content);
-        if (contentType == Config::MIME_M4A) return matchesM4a(content);
+        if (contentType == Config::MIME_M4A) return matchesIsoBmff(content);
+        if (contentType == Config::MIME_MP4) return matchesIsoBmff(content);
         if (contentType == Config::MIME_MP3) return matchesMp3(content);
         return false;
     }

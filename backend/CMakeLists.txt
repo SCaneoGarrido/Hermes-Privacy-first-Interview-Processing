@@ -55,6 +55,7 @@ add_executable(backend
                 api/controllers/healthController.cpp
                 api/controllers/interviewController.cpp
                 api/services/InterviewService.cpp
+                api/services/TranscriptDocumentBuilder.cpp
                 api/shared/utils/logger.cpp
                 api/shared/database/DatabaseManager.cpp
                 api/shared/database/MySqlInterviewRepository.cpp
@@ -68,6 +69,8 @@ add_executable(backend
                 transcription/src/WhisperTranscriber.cpp
                 llm/src/OllamaClient.cpp
                 llm/src/TranscriptEnhancer.cpp
+                llm/src/GlossarySanitizer.cpp
+                llm/src/TextUtils.cpp
             )
 
 target_compile_features(backend PRIVATE cxx_std_20)

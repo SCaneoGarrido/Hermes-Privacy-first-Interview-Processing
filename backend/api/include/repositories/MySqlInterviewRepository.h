@@ -17,9 +17,13 @@ class MySqlInterviewRepository : public IInterviewRepository {
         std::optional<std::string> findTranscriptionPathByInterviewId(int id) override;
         std::optional<std::string> findSummaryPathByInterviewId(int id) override;
         bool updateStatus(int id, const std::string& status) override;
+        bool updateKeywords(int id, const std::vector<std::string>& keywords) override;
+        std::vector<std::string> findKeywordsByInterviewId(int id) override;
         bool insertAudio(int interviewId, const std::string& path, const std::string& format, long long size) override;
+        bool updateAudio(int interviewId, const std::string& path, const std::string& format, long long size) override;
         bool upsertTranscriptionResult(int interviewId, const std::string& path) override;
         bool updateSummaryPath(int interviewId, const std::string& path) override;
+        bool removeResults(int interviewId) override;
         bool remove(int id) override;
 
     private:

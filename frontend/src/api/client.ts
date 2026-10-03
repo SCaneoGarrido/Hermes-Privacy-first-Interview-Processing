@@ -66,6 +66,13 @@ export const apiClient = {
       body: payload !== undefined ? JSON.stringify(payload) : undefined,
     }),
 
+  put: <T>(path: string, payload: unknown) =>
+    request<T>(path, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    }),
+
   // FormData: no fijar Content-Type a mano, el navegador arma el boundary del multipart.
   postForm: <T>(path: string, form: FormData, extraHeaders?: Record<string, string>) =>
     request<T>(path, { method: "POST", body: form, headers: extraHeaders }),

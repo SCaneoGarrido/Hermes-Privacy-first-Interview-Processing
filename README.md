@@ -2,7 +2,7 @@
 
 > Privacy-first Interview Processing
 
-Hermes es una plataforma open source para procesar entrevistas de investigación cualitativa **de forma completamente local**: transcripción, corrección/estructuración por hablante, anonimización de información sensible y (opcionalmente) resumen — todo corriendo en la propia máquina del investigador, sin depender de ningún servicio cloud ni API externa.
+Hermes es una plataforma open source para procesar entrevistas de investigación cualitativa **de forma completamente local**: transcripción y, opcionalmente, corrección/estructuración por hablante, anonimización de información sensible y resumen — todo corriendo en la propia máquina del investigador, sin depender de ningún servicio cloud ni API externa.
 
 Pensado para investigación que puede incluir información sensible (pacientes, profesionales de salud, identificadores personales), donde subir el audio a un servicio de terceros no es una opción aceptable.
 
@@ -14,15 +14,21 @@ Pensado para investigación que puede incluir información sensible (pacientes, 
 
 Con el backend y el frontend corriendo, más Ollama y un modelo de whisper.cpp descargados localmente, Hermes permite:
 
-1. **Subir un audio de entrevista** (validación por firma de bytes, no solo extensión).
+1. **Subir un audio o video (.mp4) de entrevista** (validación por firma de bytes, no solo extensión; de un video solo se conserva el audio).
 2. **Procesarlo en background** — cola de jobs con estados (`pending`/`running`/`completed`/`failed`), reintentable, con recuperación si el backend se reinicia a mitad de un job.
 3. **Transcribirlo localmente** con [whisper.cpp](https://github.com/ggml-org/whisper.cpp) (audio normalizado antes vía FFmpeg: mono, 16kHz, PCM16).
-4. **Mejorar la transcripción con un LLM local** vía [Ollama](https://ollama.com/) (familia Qwen), en tres fases:
-   - Corrección ortográfica/de puntuación + estructuración por hablante (`Investigador:`/`Entrevistado:`).
-   - Anonimización de nombres, lugares y organizaciones (tabla de sustitución consistente en toda la entrevista).
-   - Resumen final (opcional, `include_summary`, apagado por defecto).
+   - Opcional: **palabras clave por entrevista** (siglas y términos del tema, ej. `SIGGES, GES, FONASA`).
+     - Se cargan desde un `.txt` separadas por coma, punto y coma o una por línea.
+     - Guían a whisper y luego un paso con Ollama corrige sus variantes mal transcriptas (ej. "SILYES" → "SIGGES"), sin reescribir el resto del texto.
+     - Los cambios quedan listados en `glossary_changes.txt` (ADR-018).
+     - Requiere Ollama ≥ 0.5 (salidas estructuradas).
+4. **Opcionalmente, procesar la transcripción con un LLM local** vía [Ollama](https://ollama.com/) (familia Qwen). Ambas opciones vienen apagadas por defecto:
+   - `enhance_transcript` (experimental): corrección ortográfica/de puntuación, estructuración por hablante (`Investigador:`/`Entrevistado:`) y anonimización de nombres, lugares y organizaciones.
+   - `include_summary`: resumen, entregado como documento aparte de la transcripción.
+
+   **Por defecto la transcripción es la salida plana de whisper y no está anonimizada** (ADR-017): el flujo asume que el investigador excluye la información sensible antes de grabar.
 5. **Seguir el progreso** desde el frontend (paso actual, tiempo transcurrido).
-6. **Descargar** la transcripción final y, si se pidió, el resumen, como `.txt`.
+6. **Leer** la transcripción en la app (turnos por hablante o párrafos con marca de tiempo, búsqueda, marcadores de anonimización resaltados) e **imprimirla o guardarla como PDF** desde el navegador, o **descargar** la transcripción y el resumen como `.txt`.
 
 Si Ollama no está corriendo o falla, la entrevista no se pierde: queda disponible la transcripción cruda de whisper sin diarizar (degradación con gracia).
 
@@ -42,7 +48,7 @@ El detalle sprint por sprint vive en [`.ai/ROADMAP.md`](.ai/ROADMAP.md).
 
 Verificado contra entrevistas reales (no solo audio de prueba sintético). Lo que se encontró:
 
-- **La anonimización automática no tiene 100% de recall.** En pruebas reales quedaron sin anonimizar nombres de figuras públicas mencionadas de pasada. **No asumir que una transcripción "anonimizada" está realmente libre de PII sin revisión humana** — es la razón principal por la que Export sigue bloqueado.
+- **La anonimización automática (opcional) todavía no es confiable.** En la validación de una entrevista real reemplazó sustantivos comunes ("paciente", "médico") y anidó marcadores, y en la corrección se perdió ~3% del texto en los cortes de bloque; por eso está apagada por defecto (ADR-017). Además, no tiene 100% de recall. En pruebas reales quedaron sin anonimizar nombres de figuras públicas mencionadas de pasada. **No asumir que una transcripción "anonimizada" está realmente libre de PII sin revisión humana** — es la razón principal por la que Export sigue bloqueado.
 - **La atribución de hablante (`Investigador:`/`Entrevistado:`) es una aproximación heurística del LLM sobre texto, no diarización acústica real.** Tiene errores esperables en diálogo rápido o con turnos muy cortos.
 - whisper.cpp puede alucinar texto en otro idioma en tramos de audio poco claros.
 - Todo corre en CPU hoy — una entrevista de ~70 minutos tarda del orden de 20-25 minutos en procesarse completa.
@@ -114,6 +120,8 @@ cmake --build build
 
 Coloca el modelo de whisper.cpp en `backend/models/ggml-small.bin`, o configurá `WHISPER_MODEL_PATH` con la ruta que uses.
 
+Recomendado: el modelo VAD Silero (`ggml-silero-v5.1.2.bin`, ~1 MB, de [huggingface.co/ggml-org/whisper-vad](https://huggingface.co/ggml-org/whisper-vad)) en `backend/models/`. Hace que whisper salte silencios y ruido, donde suele alucinar frases repetidas. Sin él el backend funciona igual, pero lo avisa en el log.
+
 ### 3. Frontend
 
 ```powershell
@@ -129,6 +137,7 @@ npm run dev
 | `MYSQL_HOST` / `MYSQL_USER` / `MYSQL_PASSWORD` / `MYSQL_DATABASE` / `MYSQL_PORT` | ver `docker-compose.yml` | Conexión a MySQL |
 | `WHISPER_MODEL_PATH` | `./models/ggml-small.bin` | Modelo de whisper.cpp |
 | `WHISPER_LANGUAGE` | `es` | Idioma forzado para la transcripción |
+| `WHISPER_VAD_MODEL_PATH` | `./models/ggml-silero-v5.1.2.bin` | Modelo VAD (opcional; sin el archivo no hay VAD) |
 | `OLLAMA_BASE_URL` | `http://localhost:11434` | Endpoint de Ollama |
 | `OLLAMA_MODEL` | `qwen2.5:7b` | Modelo Qwen a usar |
 | `WORKER_POOL_SIZE` | `1` | Threads del worker pool de procesamiento |
@@ -143,6 +152,8 @@ GET    /api/v1/interviews
 GET    /api/v1/interview/:id
 DELETE /api/v1/interview/:id
 POST   /api/v1/interview/:id/process
+GET    /api/v1/interview/:id/transcript
+PUT    /api/v1/interview/:id/keywords
 GET    /api/v1/interview/:id/download/transcript
 GET    /api/v1/interview/:id/download/summary
 ```

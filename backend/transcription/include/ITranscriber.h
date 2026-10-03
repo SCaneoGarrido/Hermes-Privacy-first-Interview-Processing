@@ -15,6 +15,13 @@ struct TranscriptSegment {
     std::string text;
 };
 
+// Opciones por entrevista para la transcripcion.
+struct TranscriptionOptions {
+    // Glosario del usuario (ver ADR-018): se usa como contexto inicial del
+    // decodificador para que acierte siglas y terminos del dominio.
+    std::vector<std::string> keywords;
+};
+
 // Oculta whisper.cpp detras de esta interfaz (ADR-004, Filosofia de
 // Repositorios). audioPath debe apuntar a un WAV ya normalizado
 // (PCM 16-bit, 16kHz, mono - ver IAudioNormalizer); ITranscriber no
@@ -25,7 +32,8 @@ class ITranscriber {
 
         // Lanza std::runtime_error si el modelo no esta disponible o si
         // whisper.cpp falla al procesar el audio.
-        virtual std::vector<TranscriptSegment> transcribe(const std::string& audioPath) = 0;
+        virtual std::vector<TranscriptSegment> transcribe(const std::string& audioPath,
+                                                          const TranscriptionOptions& options) = 0;
 };
 
 }  // namespace hermes::transcription

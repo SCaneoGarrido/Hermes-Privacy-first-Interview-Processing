@@ -5,7 +5,7 @@
 #include <string>
 #include <tuple>
 
-std::tuple<std::string, std::string, int> validateFileInformation(crow::multipart::message& file_form);
+std::tuple<std::string, std::string, long long> validateFileInformation(crow::multipart::message& file_form);
 std::string generateUUID();
 std::string getFileExtension(const std::string& filename);
 std::tuple<bool, std::string> saveFile(std::string& filename, std::string& ext);

@@ -12,11 +12,15 @@ class InterviewController {
         crow::response getInterviews(const crow::request& req);
         crow::response getInterview(int id);
         crow::response processInterview(const crow::request& req, int id);
+        crow::response updateKeywords(const crow::request& req, int id);
         crow::response deleteInterview(int id);
         // Descargan el archivo generado por el pipeline (Sprint 5/6) tal
         // cual esta en disco, con Content-Disposition: attachment.
         crow::response downloadTranscript(int id);
         crow::response downloadSummary(int id);
+        // Transcripcion estructurada (bloques por hablante o parrafos con
+        // marca de tiempo) para la vista de lectura del frontend.
+        crow::response getTranscript(int id);
 
     private:
         InterviewService& m_service;

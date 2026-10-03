@@ -3,6 +3,9 @@
 
 #include <string_view>
 #include <array>
+#include <algorithm>
+#include <cctype>
+#include <cstddef>
 
 namespace Config {
     // Definimos cada formato individualmente por si necesitas usarlos por separado
@@ -10,17 +13,45 @@ namespace Config {
     inline constexpr std::string_view MIME_WAV       = "audio/wav";
     inline constexpr std::string_view MIME_OGG       = "audio/ogg";
     inline constexpr std::string_view MIME_M4A       = "audio/x-m4a";
+    // Video: solo se usa su pista de audio. La extrae FfmpegAudioNormalizer en
+    // el job, y el video original se borra despues (ver ADR en .ai/DECISIONS.md).
+    inline constexpr std::string_view MIME_MP4       = "video/mp4";
     inline constexpr std::string_view MIME_MULTIPART = "multipart/form-data";
 
-    // Formatos de audio validos para el archivo enviado dentro del multipart.
+    // Formatos validos para el archivo enviado dentro del multipart.
     // MIME_MULTIPART queda fuera: es el Content-Type del request (el "sobre"),
     // no el del archivo real, y no debe usarse para validar el contenido.
-    inline constexpr std::array<std::string_view, 4> FORMATOS_AUDIO_PERMITIDOS = {
+    inline constexpr std::array<std::string_view, 5> FORMATOS_PERMITIDOS = {
         MIME_MP3,
         MIME_WAV,
         MIME_OGG,
-        MIME_M4A
+        MIME_M4A,
+        MIME_MP4
     };
+
+    // Tope de subida (1 GiB): cubre ~1h de video de Zoom/Meet. Crow mantiene
+    // el body completo en memoria y el multipart se copia varias veces, asi
+    // que sin tope un video grande puede agotar la RAM. Mantener sincronizado
+    // con MAX_UPLOAD_BYTES en frontend/src/api/interviews.ts.
+    inline constexpr std::size_t MAX_UPLOAD_BYTES = 1024ULL * 1024ULL * 1024ULL;
+
+    // Glosario de palabras clave por entrevista (ADR-018). Mantener
+    // sincronizado con frontend/src/api/interviews.ts.
+    inline constexpr std::size_t MAX_KEYWORDS = 100;
+    inline constexpr std::size_t MAX_KEYWORD_LENGTH = 80;
+
+    // Extensiones (tal como quedan en interviews_audio.interview_audio_format)
+    // de contenedores de video cuyo original no se retiene tras extraer el audio.
+    inline constexpr std::array<std::string_view, 1> VIDEO_EXTENSIONS = { ".mp4" };
+
+    inline bool isVideoExtension(std::string_view ext) {
+        return std::any_of(VIDEO_EXTENSIONS.begin(), VIDEO_EXTENSIONS.end(), [&](std::string_view video) {
+            return ext.size() == video.size()
+                && std::equal(ext.begin(), ext.end(), video.begin(), [](char a, char b) {
+                       return std::tolower(static_cast<unsigned char>(a)) == b;
+                   });
+        });
+    }
 
     inline constexpr std::string_view UPLOAD_DIRECTORY = "./uploads";
 
@@ -36,5 +67,8 @@ namespace Config {
     // "tiny" para espanol real (entrevistas largas/ruidosas) sin llegar a
     // la lentitud de "medium" en una laptop sin GPU.
     inline constexpr std::string_view DEFAULT_WHISPER_MODEL_PATH = "./models/ggml-small.bin";
+    // VAD (Silero) de whisper.cpp: salta silencios/ruido, donde whisper suele
+    // empezar a alucinar repeticiones. Opcional: sin el archivo, no hay VAD.
+    inline constexpr std::string_view DEFAULT_WHISPER_VAD_MODEL_PATH = "./models/ggml-silero-v5.1.2.bin";
 }
 #endif // CONSTANST_H

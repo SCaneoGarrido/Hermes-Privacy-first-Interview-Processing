@@ -44,14 +44,35 @@ llama a `DatabaseManager::executePrepared(..., /*return_id=*/true)` →
 `mysql_stmt_insert_id`). Ver ADR-012 en `.ai/DECISIONS.md`.
 
 ### `POST /api/v1/upload`
-Sube un audio y lo asocia a una entrevista. Requiere:
-- Multipart con campo `file` (mp3/wav/ogg/m4a), validado contra la firma real
-  de bytes del archivo (no solo el `Content-Type` declarado — ver
+Sube un audio (o video .mp4) y lo asocia a una entrevista. Requiere:
+- Multipart con campo `file` (mp3/wav/ogg/m4a, o `video/mp4`), validado contra
+  la firma real de bytes del archivo (no solo el `Content-Type` declarado — ver
   `AudioSignature.h`).
 - Header **`interview_id`** (entero, validado por `HeaderIdGuard`).
+- Tamaño máximo 1 GiB (`Config::MAX_UPLOAD_BYTES`): si se supera responde
+  `413 PAYLOAD_TOO_LARGE`.
+
+Si es un video, el job de procesamiento extrae su audio, lo deja como nueva
+fuente de la entrevista (`uploads/<uuid>.wav`, formato `.wav`) y **borra el
+video original** (ADR-016).
 
 Responde `data: { "filename", "path", "code": "ACCEPTED" }`. Al guardar el
 audio, además actualiza `interviews.status` a `pending_processing`.
+
+Errores (vía `InterviewService::canAttachAudio`, chequeado **antes** de
+escribir el archivo en disco):
+- `404 NOT_FOUND` si la entrevista no existe.
+- `409 INTERVIEW_BUSY` si la entrevista está en `processing` o tiene un job
+  encolado: el audio no puede cambiar en medio de un procesamiento.
+- `500 INTERNAL_SERVER_ERROR` si falla el registro en la BD. En cualquier
+  rechazo posterior a guardar, el archivo recién subido se borra: un upload
+  rechazado nunca queda huérfano en `./uploads`.
+
+**Reemplazo:** si la entrevista ya tenía audio, se actualiza la fila de
+`interviews_audio` (no se inserta otra), se borra el archivo anterior y se
+descarta el resultado previo (fila de `interview_results` y la carpeta
+`storage/interviews/<id>`), porque ya no corresponde al audio nuevo. El
+frontend pide confirmación antes de reemplazar.
 
 ### `GET /api/v1/interviews` — listado
 `InterviewController::getInterviews`. Devuelve un array leyendo la columna
@@ -96,14 +117,40 @@ de `SQL/init.sql`):
 ```
 `404 NOT_FOUND` si el id no existe.
 
+### `PUT /api/v1/interview/:id/keywords` — glosario de palabras clave
+Reemplaza el glosario de la entrevista (ADR-018). Body: `{"keywords": ["SIGGES", "GES", "FONASA"]}`. Una
+lista vacía lo borra.
+- El backend recorta espacios, ignora vacíos y deduplica sin distinguir mayúsculas.
+- `400 INVALID_KEYWORDS`: body sin la lista, elementos que no son texto, más de 100 términos, términos de
+  más de 80 caracteres o con caracteres de control.
+- `404 NOT_FOUND`: el id no existe.
+- `200`: `data: { "id": 7, "keywords": [...] }`, con la lista ya normalizada.
+
+`GET /api/v1/interview/:id` incluye `"keywords": [...]` (vacío si no hay). Al procesar, whisper usa el
+glosario como contexto y luego un paso de Ollama corrige variantes mal transcriptas (paso
+`current_step = "aplicando_glosario"`). Sin palabras clave, ese paso no corre.
+
 ### `POST /api/v1/interview/:id/process` — disparar transcripción
 `InterviewController::processInterview`. Botón "Enviar a procesar" de la UI:
 1. `404 NOT_FOUND` si el id no existe.
 2. `409 AUDIO_REQUIRED` si la entrevista todavía no tiene audio asociado.
 3. Si tiene audio, marca `status = 'processing'` y responde `202`:
    ```json
-   { "success": true, "data": { "id": 7, "status": "processing" }, "error": null }
+   { "success": true, "data": { "id": 7, "status": "processing", "include_summary": false, "enhance_transcript": false }, "error": null }
    ```
+
+Body opcional (sin body o sin un campo, ese campo vale `false`):
+
+```json
+{ "include_summary": true, "enhance_transcript": true }
+```
+
+- **Por defecto** (ambos `false`): la transcripción entregada es la salida plana de whisper, una línea por
+  segmento. No se llama a Ollama y **no está anonimizada** (ADR-017).
+- `enhance_transcript`: corrección + etiquetas de hablante + anonimización vía Ollama (experimental). Si se
+  pidió y la anonimización falla, el archivo empieza con un aviso `[AVISO HERMES]`.
+- `include_summary`: resumen como documento aparte (`GET /interview/:id/summary`). Se genera sobre el texto
+  de whisper, o sobre el anonimizado si `enhance_transcript` está activo.
 
 **Importante — límite conocido**: esto solo deja constancia de que se pidió
 procesar. No hay cola de trabajos ni Whisper integrado todavía (Sprint 4/5
@@ -114,6 +161,38 @@ integración. `TranscriptionController` (esqueleto en
 implementación ni ruta registrada — es de ahí, no de `InterviewController`,
 de donde debería salir la transcripción real cuando se construya.
 
+### `GET /api/v1/interview/:id/transcript` — vista de lectura
+`InterviewController::getTranscript`, vía `InterviewService::getTranscriptDocument`
+y `TranscriptDocumentBuilder`. Devuelve la transcripción final estructurada
+para leerla en la app (y "Imprimir / Guardar PDF" desde el navegador), en vez
+del `.txt` plano de `/download/transcript`.
+
+```json
+{
+  "id": 3,
+  "has_speakers": true,
+  "has_timestamps": false,
+  "notice": null,
+  "summary": "texto del resumen o null",
+  "blocks": [
+    { "speaker": "Investigador", "start": null, "text": "..." },
+    { "speaker": "Entrevistado", "start": null, "text": "..." }
+  ]
+}
+```
+
+- Texto etiquetado por hablante (con "Corregir y anonimizar"): un bloque por
+  turno; turnos consecutivos del mismo hablante se unen.
+- Texto plano de whisper: párrafos de 4–9 líneas. `start` (segundos) solo si
+  las líneas de `transcript_final.txt` coinciden 1:1 con los segmentos de
+  `transcript_raw.json`.
+- `notice`: el aviso `[AVISO HERMES] ...` que el pipeline antepone cuando la
+  anonimización pedida falló, separado del texto.
+
+Errores: `404 NOT_FOUND` (entrevista inexistente), `409 TRANSCRIPTION_NOT_READY`
+(sin resultado), `410 TRANSCRIPTION_FILE_MISSING` (la BD registra un resultado
+pero el archivo ya no está en disco).
+
 ### `DELETE /api/v1/interview/:id`
 `InterviewController::deleteInterview`, vía `InterviewService::removeInterview`:
 1. `404 NOT_FOUND` si el id no existe.
@@ -123,7 +202,9 @@ de donde debería salir la transcripción real cuando se construya.
 3. Si la entrevista tenía audio asociado, además borra el archivo físico en
    `./uploads` (best-effort — si falla, solo se loguea, no aborta la
    respuesta). Necesario por Privacy First: sin este paso, "eliminar" una
-   entrevista dejaría el audio real huérfano en disco.
+   entrevista dejaría el audio real huérfano en disco. Por el mismo motivo
+   borra `storage/interviews/<id>` (transcripciones, resumen, audio
+   normalizado).
 4. Responde `200` con `data: { "id": 7, "code": "DELETED" }`.
 
 ```json

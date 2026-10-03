@@ -4,7 +4,7 @@ aliases: ["Hermes Knowledge Base", "Bóveda Hermes", "Maps of Content"]
 tags: [moc, home]
 status: stable
 created: 2026-07-24
-updated: 2026-07-24
+updated: 2026-10-02
 source: 
 related: ["MOC - Proyecto", "MOC - Arquitectura", "MOC - Roadmap", "MOC - Referencias", "MOC - Conocimiento Tecnico"]
 ---
@@ -17,7 +17,7 @@ Punto de entrada de la bóveda de conocimiento de **Hermes** — Privacy-first I
 
 Esta bóveda es la memoria a largo plazo del proyecto Hermes: documenta su misión, arquitectura, decisiones técnicas, roadmap y conocimiento técnico de soporte, en español, preservando en su idioma original los tecnicismos (RAII, Clean Architecture, Repository Pattern, etc.).
 
-**¿Retomando el trabajo o cambiando de máquina?** Empezá por [[Estado Actual del Proyecto]] — foto del estado real, qué se hizo último y qué sigue, antes de navegar el resto de la bóveda.
+**¿Retomando el trabajo o cambiando de máquina?** Empezá por [[Estado Actual del Proyecto]] — foto del estado real, qué se hizo último y qué sigue, antes de navegar el resto de la bóveda. El historial sesión por sesión (qué se hizo, por qué y qué sigue) está en la carpeta `changelog/`, un archivo por sesión (`YYYY-MM-DD_contexto.md`).
 
 **Navegación principal**
 

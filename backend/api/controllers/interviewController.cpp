@@ -148,6 +148,12 @@ crow::response InterviewController::getInterview(int id) {
             data["current_step"] = nullptr;
         }
 
+        std::vector<crow::json::wvalue> keywords;
+        for (const auto& keyword : detail->keywords) {
+            keywords.emplace_back(keyword);
+        }
+        data["keywords"] = std::move(keywords);
+
         return ApiResponse::success(200, std::move(data));
 
     } catch (const std::exception& e) {
@@ -198,20 +204,86 @@ crow::response InterviewController::downloadSummary(int id) {
     }
 }
 
+crow::response InterviewController::getTranscript(int id) {
+    try {
+        using Status = TranscriptDocumentOutcome::Status;
+        auto outcome = m_service.getTranscriptDocument(id);
+        switch (outcome.status) {
+            case Status::NotFound:
+                return ApiResponse::failure(404, "NOT_FOUND", "No existe una entrevista con ese id");
+            case Status::NotReady:
+                return ApiResponse::failure(409, "TRANSCRIPTION_NOT_READY", "La entrevista todavia no tiene una transcripcion disponible");
+            case Status::FileMissing:
+                return ApiResponse::failure(410, "TRANSCRIPTION_FILE_MISSING",
+                                            "El archivo de la transcripción ya no está en disco. Volvé a procesar la entrevista.");
+            case Status::Ok:
+                break;
+        }
+
+        const TranscriptDocument& document = outcome.document;
+        crow::json::wvalue data;
+        data["id"] = id;
+        data["has_speakers"] = document.hasSpeakers;
+        data["has_timestamps"] = document.hasTimestamps;
+        if (document.notice) {
+            data["notice"] = *document.notice;
+        } else {
+            data["notice"] = nullptr;
+        }
+        if (document.summary) {
+            data["summary"] = *document.summary;
+        } else {
+            data["summary"] = nullptr;
+        }
+
+        std::vector<crow::json::wvalue> blocks;
+        blocks.reserve(document.blocks.size());
+        for (const auto& block : document.blocks) {
+            crow::json::wvalue item;
+            if (block.speaker) {
+                item["speaker"] = *block.speaker;
+            } else {
+                item["speaker"] = nullptr;
+            }
+            if (block.startSeconds) {
+                item["start"] = *block.startSeconds;
+            } else {
+                item["start"] = nullptr;
+            }
+            item["text"] = block.text;
+            blocks.push_back(std::move(item));
+        }
+        data["blocks"] = std::move(blocks);
+
+        return ApiResponse::success(200, std::move(data));
+
+    } catch (const std::exception& e) {
+        std::stringstream log_error_ss;
+        log_error_ss << "[interviewController][getTranscript] Fallo en getTranscript. Detalle: " << e.what();
+        log_event(log_error_ss.str());
+        return ApiResponse::failure(500, "INTERNAL_SERVER_ERROR", "Error leyendo la transcripcion");
+    }
+}
+
 crow::response InterviewController::processInterview(const crow::request& req, int id) {
     try {
-        // Body opcional: {"include_summary": true}. Sin body, JSON invalido,
-        // o el campo ausente -> false (el resumen es opt-in explicito, ver
-        // Job.h). No es un error de la request, es simplemente el default.
+        // Body opcional: {"include_summary": true, "enhance_transcript": true}.
+        // Sin body, JSON invalido, o un campo ausente -> false (ambas fases
+        // son opt-in explicito, ver Job.h). No es un error de la request, es
+        // simplemente el default.
         bool includeSummary = false;
+        bool enhanceTranscript = false;
         if (!req.body.empty()) {
             crow::json::rvalue body_json = crow::json::load(req.body);
             if (body_json && body_json.has("include_summary")) {
                 includeSummary = body_json["include_summary"].b();
             }
+            if (body_json && body_json.has("enhance_transcript")) {
+                enhanceTranscript = body_json["enhance_transcript"].b();
+            }
         }
 
-        switch (m_service.requestProcessing(id, includeSummary)) {
+        switch (m_service.requestProcessing(id, includeSummary, enhanceTranscript)) {
             case ProcessOutcome::NotFound:
                 return ApiResponse::failure(404, "NOT_FOUND", "No existe una entrevista con ese id");
 
@@ -229,6 +301,7 @@ crow::response InterviewController::processInterview(const crow::request& req, i
                 data["id"] = id;
                 data["status"] = "processing";
                 data["include_summary"] = includeSummary;
+                data["enhance_transcript"] = enhanceTranscript;
                 return ApiResponse::success(202, std::move(data));
             }
         }
@@ -267,5 +340,54 @@ crow::response InterviewController::deleteInterview(int id) {
         log_error_ss << "[interviewController][deleteInterview] Fallo en deleteInterview. Detalle: " << e.what();
         log_event(log_error_ss.str());
         return ApiResponse::failure(500, "INTERNAL_SERVER_ERROR", "Error eliminando la entrevista");
+    }
+}
+
+crow::response InterviewController::updateKeywords(const crow::request& req, int id) {
+    try {
+        // Body: {"keywords": ["SIGGES", "GES", ...]}. El parseo del archivo
+        // .txt lo hace el frontend; aca solo se valida la forma del JSON.
+        crow::json::rvalue body_json = crow::json::load(req.body);
+        if (!body_json || !body_json.has("keywords") || body_json["keywords"].t() != crow::json::type::List) {
+            return ApiResponse::failure(400, "INVALID_KEYWORDS", "Se esperaba {\"keywords\": [\"termino\", ...]}");
+        }
+        std::vector<std::string> keywords;
+        for (const auto& item : body_json["keywords"]) {
+            if (item.t() != crow::json::type::String) {
+                return ApiResponse::failure(400, "INVALID_KEYWORDS", "Cada palabra clave debe ser un texto");
+            }
+            keywords.emplace_back(item.s());
+        }
+
+        auto outcome = m_service.setKeywords(id, keywords);
+        switch (outcome.status) {
+            case KeywordsOutcome::Status::NotFound:
+                return ApiResponse::failure(404, "NOT_FOUND", "No existe una entrevista con ese id");
+
+            case KeywordsOutcome::Status::Invalid:
+                return ApiResponse::failure(400, "INVALID_KEYWORDS", outcome.message);
+
+            case KeywordsOutcome::Status::Failed:
+                return ApiResponse::failure(500, "INTERNAL_SERVER_ERROR", "Error guardando las palabras clave");
+
+            case KeywordsOutcome::Status::Ok: {
+                std::vector<crow::json::wvalue> saved;
+                for (const auto& keyword : outcome.keywords) {
+                    saved.emplace_back(keyword);
+                }
+                crow::json::wvalue data;
+                data["id"] = id;
+                data["keywords"] = std::move(saved);
+                return ApiResponse::success(200, std::move(data));
+            }
+        }
+
+        return ApiResponse::failure(500, "INTERNAL_SERVER_ERROR", "Error guardando las palabras clave");
+
+    } catch (const std::exception& e) {
+        std::stringstream log_error_ss;
+        log_error_ss << "[interviewController][updateKeywords] Fallo en updateKeywords. Detalle: " << e.what();
+        log_event(log_error_ss.str());
+        return ApiResponse::failure(500, "INTERNAL_SERVER_ERROR", "Error guardando las palabras clave");
     }
 }

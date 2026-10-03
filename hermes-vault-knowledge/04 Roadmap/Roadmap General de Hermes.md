@@ -4,7 +4,7 @@ aliases: ["Hermes Roadmap"]
 tags: [roadmap, hermes]
 status: stable
 created: 2026-07-24
-updated: 2026-08-15
+updated: 2026-10-02
 source: .ai/ROADMAP.md
 related: ["Hermes - Vision General"]
 ---
@@ -31,19 +31,19 @@ Secuencia de sprints:
 12. [[Sprint 11 - Documentation]]
 13. [[Sprint 12 - Release]]
 
-# Status (2026-08-15)
+# Status (2026-10-02)
 
 | # | Sprint | Estado | Nota |
 |---|--------|--------|------|
 | 0 | [[Sprint 0 - Foundation]] | ✅ done | Entorno, CMake/vcpkg, Crow, MySQL, logging, `/health` |
 | 1 | [[Sprint 1 - Core API]] | 🟠 in-progress | Services/Repositories y versionado `/api/v1` ya resueltos ([[ADR-012 - Repository y Service Layer para Entrevistas]], [[ADR-013 - Versionado de API]]); falta endpoint Configuration y DTOs formales |
-| 2 | [[Sprint 2 - Persistence]] | ✅ done | CRUD completo (incl. `DELETE`) + `IInterviewRepository`/`InterviewService` ([[ADR-012 - Repository y Service Layer para Entrevistas]]) |
-| 3 | [[Sprint 3 - File Upload]] | 🟠 in-progress | Upload + validación de firma de bytes; falta progreso de subida |
+| 2 | [[Sprint 2 - Persistence]] | ✅ done | CRUD completo (incl. `DELETE`) + `IInterviewRepository`/`InterviewService` ([[ADR-012 - Repository y Service Layer para Entrevistas]]). 2026-10-02: reconexión automática a MySQL en `DatabaseManager` |
+| 3 | [[Sprint 3 - File Upload]] | 🟠 in-progress | Upload + firma de bytes, video .mp4, tope 1 GB. 2026-10-02: reemplazo de audio, validación previa (404/409) y cero archivos huérfanos. Falta progreso de subida |
 | 4 | [[Sprint 4 - Background Processing]] | ✅ done | Cola de jobs in-memory + worker pool, máquina de estados persistida, dedupe (409), recuperación de crashes (`reclaimStuckJobs`), cierra una condición de carrera en `DatabaseManager` que existía desde Sprint 0 |
 | 5 | [[Sprint 5 - Whisper Integration]] | ✅ done | Verificado end-to-end contra una entrevista real de ~70min (1804 segmentos) |
 | 6 | [[Sprint 6 - Ollama Integration]] | 🟡 done (con reservas) | Verificado a escala real. Determinismo y normalización de etiquetas resueltos 2026-08-15. **Pendiente, bloquea Sprint 7**: recall de anonimización incompleto |
-| 7 | [[Sprint 7 - Export]] | ⚪ draft (bloqueado) | No iniciado a propósito — depende de que la anonimización de Sprint 6 sea confiable |
-| 8 | [[Sprint 8 - Frontend]] | 🟠 in-progress | Adelantado fuera de orden; progreso real, checkbox de resumen y descargas ya funcionan; falta configuración |
+| 7 | [[Sprint 7 - Export]] | ⚪ draft (bloqueado) | No iniciado a propósito — depende de que la anonimización de Sprint 6 sea confiable. La vista de lectura con PDF desde el navegador (ADR-019) **no** es Export |
+| 8 | [[Sprint 8 - Frontend]] | 🟢 casi completo | 2026-10-02: rediseño visual (identidad griega), lista con filtros, detalle por estado, vista de lectura con PDF. Falta configuración (depende de Sprint 9) |
 | 9 | [[Sprint 9 - Configuration]] | ⚪ draft | No iniciado — toda la configuración hoy es por variables de entorno |
 | 10 | [[Sprint 10 - Testing]] | ⚪ draft | No iniciado — sin tests Catch2, solo verificación manual contra entrevistas reales |
 | 11 | [[Sprint 11 - Documentation]] | 🟡 in-progress (subestimado) | `.ai/`, esta bóveda y `docs/API_REQUIREMENTS.md` activamente mantenidos; `README.md` reescrito y `CHANGELOG.md` agregado 2026-08-15; falta guía de instalación formal |
