@@ -19,7 +19,7 @@ Con el backend y el frontend corriendo, más Ollama y un modelo de whisper.cpp d
    - Validación por firma de bytes, no solo por extensión.
    - De un video solo se conserva el audio; el video original se borra al procesar (ADR-016).
    - Se puede **reemplazar el audio** de una entrevista: se borran el archivo anterior y la transcripción/resumen generados con él (con confirmación en la interfaz). No se permite mientras la entrevista se está procesando.
-3. **Cargar palabras clave por entrevista** (opcional): siglas y términos del tema, ej. `SIGGES, GES, FONASA`.
+3. **Cargar palabras clave por entrevista** (opcional): Para mejora de precision de la transcripcion.
    - Se cargan desde un `.txt` separadas por coma, punto y coma o una por línea (máx. 100 términos de hasta 80 caracteres).
    - Guían a whisper y luego un paso con Ollama corrige sus variantes mal transcriptas (ej. "SILYES" → "SIGGES"), sin reescribir el resto del texto. Los cambios quedan listados en `glossary_changes.txt` (ADR-018).
    - Requiere Ollama ≥ 0.5 (salidas estructuradas).
