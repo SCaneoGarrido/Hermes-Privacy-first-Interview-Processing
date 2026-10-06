@@ -4,16 +4,30 @@
 #include "../include/ApiResponse.h"
 #include "../include/logger.h"
 #include <fstream>
+#include <optional>
 #include <sstream>
 #include <vector>
 
 namespace {
 
-// Arma la respuesta de descarga de un archivo de texto ya generado en disco
-// (transcripcion/resumen, ver InterviewProcessingJobHandler). No pasa por
-// ApiResponse: el body es el archivo crudo, no el sobre {success,data,error}
+// Arma la respuesta de descarga de un texto (transcripcion/resumen). No pasa
+// por ApiResponse: el body es el texto crudo, no el sobre {success,data,error}
 // - los casos de error (entrevista no encontrada, archivo no listo) si usan
 // ApiResponse, para mantener el contrato JSON en esos casos.
+crow::response buildTextDownload(const std::string& content, const std::string& downloadFilename) {
+    // BOM UTF-8 al inicio de la respuesta (no del archivo en disco): sin
+    // el, editores de texto en Windows sin deteccion de codificacion
+    // confiable (Notepad clasico, entre otros) adivinan la pagina de
+    // codigos ANSI del sistema en vez de UTF-8, y los acentos se ven como
+    // mojibake pese a que el archivo es UTF-8 valido.
+    static const std::string UTF8_BOM = "\xEF\xBB\xBF";
+
+    crow::response res(200, UTF8_BOM + content);
+    res.set_header("Content-Type", "text/plain; charset=utf-8");
+    res.set_header("Content-Disposition", "attachment; filename=\"" + downloadFilename + "\"");
+    return res;
+}
+
 crow::response buildDownloadResponse(const std::string& path, const std::string& downloadFilename) {
     std::ifstream file(path, std::ios::binary);
     if (!file.is_open()) {
@@ -23,20 +37,89 @@ crow::response buildDownloadResponse(const std::string& path, const std::string&
 
     std::stringstream buffer;
     buffer << file.rdbuf();
+    return buildTextDownload(buffer.str(), downloadFilename);
+}
 
-    // BOM UTF-8 al inicio de la respuesta (no del archivo en disco): sin
-    // el, editores de texto en Windows sin deteccion de codificacion
-    // confiable (Notepad clasico, entre otros) adivinan la pagina de
-    // codigos ANSI del sistema en vez de UTF-8, y los acentos se ven como
-    // mojibake pese a que el archivo es UTF-8 valido. Se agrega solo aca,
-    // no al escribir transcript_final.txt, para no afectar nada que lo
-    // vuelva a leer internamente (ej. Sprint 7 - Export).
-    static const std::string UTF8_BOM = "\xEF\xBB\xBF";
+crow::json::wvalue serializeTranscriptDocument(int id, const TranscriptDocument& document) {
+    crow::json::wvalue data;
+    data["id"] = id;
+    data["has_speakers"] = document.hasSpeakers;
+    data["has_timestamps"] = document.hasTimestamps;
+    data["speaker_source"] = document.speakerSource;
+    data["edited"] = document.edited;
+    if (document.notice) {
+        data["notice"] = *document.notice;
+    } else {
+        data["notice"] = nullptr;
+    }
+    if (document.summary) {
+        data["summary"] = *document.summary;
+    } else {
+        data["summary"] = nullptr;
+    }
 
-    crow::response res(200, UTF8_BOM + buffer.str());
-    res.set_header("Content-Type", "text/plain; charset=utf-8");
-    res.set_header("Content-Disposition", "attachment; filename=\"" + downloadFilename + "\"");
-    return res;
+    std::vector<crow::json::wvalue> speakers;
+    for (const auto& speaker : document.speakers) {
+        crow::json::wvalue item;
+        item["key"] = speaker.key;
+        item["label"] = speaker.label;
+        speakers.push_back(std::move(item));
+    }
+    data["speakers"] = std::move(speakers);
+
+    std::vector<crow::json::wvalue> blocks;
+    blocks.reserve(document.blocks.size());
+    for (const auto& block : document.blocks) {
+        crow::json::wvalue item;
+        if (block.speaker) {
+            item["speaker"] = *block.speaker;
+        } else {
+            item["speaker"] = nullptr;
+        }
+        if (block.startSeconds) {
+            item["start"] = *block.startSeconds;
+        } else {
+            item["start"] = nullptr;
+        }
+        if (block.endSeconds) {
+            item["end"] = *block.endSeconds;
+        } else {
+            item["end"] = nullptr;
+        }
+        item["text"] = block.text;
+        blocks.push_back(std::move(item));
+    }
+    data["blocks"] = std::move(blocks);
+    return data;
+}
+
+crow::response transcriptEditResponse(int id, const TranscriptEditOutcome& outcome) {
+    using Status = TranscriptEditOutcome::Status;
+    switch (outcome.status) {
+        case Status::NotFound:
+            return ApiResponse::failure(404, "NOT_FOUND", "No existe una entrevista con ese id");
+        case Status::NotReady:
+            return ApiResponse::failure(409, "TRANSCRIPTION_NOT_READY", "La entrevista todavia no tiene una transcripcion disponible");
+        case Status::NotEditable:
+            return ApiResponse::failure(409, "TRANSCRIPTION_NOT_EDITABLE",
+                                        "Esta transcripcion se genero con una version anterior de Hermes. Volvé a procesar la entrevista para poder editarla.");
+        case Status::Busy:
+            return ApiResponse::failure(409, "INTERVIEW_BUSY", "La entrevista se esta procesando; esperá a que termine para editar la transcripcion");
+        case Status::Invalid:
+            return ApiResponse::failure(400, "VALIDATION_ERROR", outcome.message);
+        case Status::Failed:
+            return ApiResponse::failure(500, "INTERNAL_SERVER_ERROR", "No se pudo guardar la transcripcion");
+        case Status::Ok:
+            break;
+    }
+    return ApiResponse::success(200, serializeTranscriptDocument(id, outcome.document));
+}
+
+std::optional<double> readOptionalNumber(const crow::json::rvalue& item, const char* key) {
+    if (!item.has(key)) return std::nullopt;
+    const auto& value = item[key];
+    if (value.t() != crow::json::type::Number) return std::nullopt;
+    return value.d();
 }
 
 }  // namespace
@@ -153,6 +236,7 @@ crow::response InterviewController::getInterview(int id) {
             keywords.emplace_back(keyword);
         }
         data["keywords"] = std::move(keywords);
+        data["transcript_edited"] = detail->transcriptEdited;
 
         return ApiResponse::success(200, std::move(data));
 
@@ -166,15 +250,20 @@ crow::response InterviewController::getInterview(int id) {
 
 crow::response InterviewController::downloadTranscript(int id) {
     try {
-        auto detail = m_service.getInterviewDetail(id);
-        if (!detail.has_value()) {
-            return ApiResponse::failure(404, "NOT_FOUND", "No existe una entrevista con ese id");
+        using Status = TranscriptTextOutcome::Status;
+        auto outcome = m_service.renderTranscriptText(id);
+        switch (outcome.status) {
+            case Status::NotFound:
+                return ApiResponse::failure(404, "NOT_FOUND", "No existe una entrevista con ese id");
+            case Status::NotReady:
+                return ApiResponse::failure(409, "TRANSCRIPTION_NOT_READY", "La entrevista todavia no tiene una transcripcion disponible");
+            case Status::FileMissing:
+                return ApiResponse::failure(410, "TRANSCRIPTION_FILE_MISSING",
+                                            "El archivo de la transcripción ya no está en disco. Volvé a procesar la entrevista.");
+            case Status::Ok:
+                break;
         }
-        if (!detail->transcriptionPath.has_value()) {
-            return ApiResponse::failure(409, "TRANSCRIPTION_NOT_READY", "La entrevista todavia no tiene una transcripcion disponible");
-        }
-
-        return buildDownloadResponse(detail->transcriptionPath.value(), "entrevista_" + std::to_string(id) + "_transcripcion.txt");
+        return buildTextDownload(outcome.text, "entrevista_" + std::to_string(id) + "_transcripcion.txt");
 
     } catch (const std::exception& e) {
         std::stringstream log_error_ss;
@@ -220,48 +309,58 @@ crow::response InterviewController::getTranscript(int id) {
                 break;
         }
 
-        const TranscriptDocument& document = outcome.document;
-        crow::json::wvalue data;
-        data["id"] = id;
-        data["has_speakers"] = document.hasSpeakers;
-        data["has_timestamps"] = document.hasTimestamps;
-        if (document.notice) {
-            data["notice"] = *document.notice;
-        } else {
-            data["notice"] = nullptr;
-        }
-        if (document.summary) {
-            data["summary"] = *document.summary;
-        } else {
-            data["summary"] = nullptr;
-        }
-
-        std::vector<crow::json::wvalue> blocks;
-        blocks.reserve(document.blocks.size());
-        for (const auto& block : document.blocks) {
-            crow::json::wvalue item;
-            if (block.speaker) {
-                item["speaker"] = *block.speaker;
-            } else {
-                item["speaker"] = nullptr;
-            }
-            if (block.startSeconds) {
-                item["start"] = *block.startSeconds;
-            } else {
-                item["start"] = nullptr;
-            }
-            item["text"] = block.text;
-            blocks.push_back(std::move(item));
-        }
-        data["blocks"] = std::move(blocks);
-
-        return ApiResponse::success(200, std::move(data));
+        return ApiResponse::success(200, serializeTranscriptDocument(id, outcome.document));
 
     } catch (const std::exception& e) {
         std::stringstream log_error_ss;
         log_error_ss << "[interviewController][getTranscript] Fallo en getTranscript. Detalle: " << e.what();
         log_event(log_error_ss.str());
         return ApiResponse::failure(500, "INTERNAL_SERVER_ERROR", "Error leyendo la transcripcion");
+    }
+}
+
+crow::response InterviewController::updateTranscript(const crow::request& req, int id) {
+    try {
+        // Body: {"blocks": [{"speaker": "interviewer"|"subject"|null,
+        //                    "start": 12.3|null, "end": 20.1|null, "text": "..."}]}
+        crow::json::rvalue body = crow::json::load(req.body);
+        if (!body || !body.has("blocks") || body["blocks"].t() != crow::json::type::List) {
+            return ApiResponse::failure(400, "VALIDATION_ERROR", "Se esperaba un objeto JSON con la lista 'blocks'");
+        }
+
+        std::vector<TranscriptBlockInput> blocks;
+        for (const auto& item : body["blocks"]) {
+            if (item.t() != crow::json::type::Object || !item.has("text") || item["text"].t() != crow::json::type::String) {
+                return ApiResponse::failure(400, "VALIDATION_ERROR", "Cada bloque debe ser un objeto con 'text'");
+            }
+            TranscriptBlockInput block;
+            block.text = std::string(item["text"].s());
+            if (item.has("speaker") && item["speaker"].t() == crow::json::type::String) {
+                block.speaker = std::string(item["speaker"].s());
+            }
+            block.startSeconds = readOptionalNumber(item, "start");
+            block.endSeconds = readOptionalNumber(item, "end");
+            blocks.push_back(std::move(block));
+        }
+
+        return transcriptEditResponse(id, m_service.updateTranscript(id, blocks));
+
+    } catch (const std::exception& e) {
+        std::stringstream log_error_ss;
+        log_error_ss << "[interviewController][updateTranscript] Fallo en updateTranscript. Detalle: " << e.what();
+        log_event(log_error_ss.str());
+        return ApiResponse::failure(500, "INTERNAL_SERVER_ERROR", "Error guardando la transcripcion");
+    }
+}
+
+crow::response InterviewController::restoreTranscript(int id) {
+    try {
+        return transcriptEditResponse(id, m_service.restoreTranscript(id));
+    } catch (const std::exception& e) {
+        std::stringstream log_error_ss;
+        log_error_ss << "[interviewController][restoreTranscript] Fallo en restoreTranscript. Detalle: " << e.what();
+        log_event(log_error_ss.str());
+        return ApiResponse::failure(500, "INTERNAL_SERVER_ERROR", "Error restaurando la transcripcion");
     }
 }
 

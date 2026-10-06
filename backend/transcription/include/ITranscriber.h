@@ -1,18 +1,30 @@
 #pragma once
 
+#include <cstdint>
 #include <string>
 #include <vector>
 
 namespace hermes::transcription {
 
-// Segmento de transcripcion cruda, tal como lo devuelve whisper.cpp: sin
-// identificar quien habla (eso lo resuelve Sprint 6 via Ollama sobre este
-// mismo formato). start/end ya vienen formateados "HH:MM:SS" - ver
-// whisper.cpp Architecture en la vault sobre la conversion de centisegundos.
-struct TranscriptSegment {
-    std::string start;
-    std::string end;
+// Palabra con sus tiempos en el audio original (ms). Se usa para alinear la
+// transcripcion con la diarizacion acustica cuando un segmento de whisper
+// cruza un cambio de hablante (ver SpeakerAssigner).
+struct TranscriptWord {
+    int64_t startMs;
+    int64_t endMs;
     std::string text;
+};
+
+// Segmento de transcripcion cruda, tal como lo devuelve whisper.cpp, sin
+// identificar quien habla (eso lo resuelve la diarizacion, ver IDiarizer).
+// Tiempos en milisegundos del audio original (whisper.cpp ya los remapea
+// cuando usa VAD). `words` puede venir vacio (ej. tramos marcados como
+// no transcritos tras un bucle).
+struct TranscriptSegment {
+    int64_t startMs;
+    int64_t endMs;
+    std::string text;
+    std::vector<TranscriptWord> words;
 };
 
 // Opciones por entrevista para la transcripcion.

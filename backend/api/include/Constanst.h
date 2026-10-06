@@ -63,12 +63,22 @@ namespace Config {
     // Ruta al modelo ggml de whisper.cpp, configurable via env var
     // WHISPER_MODEL_PATH. No se descarga automaticamente (ver whisper.cpp
     // Architecture en la vault): el researcher lo coloca a mano.
-    // "small" (~466MB): mejor equilibrio calidad/velocidad en CPU que
-    // "tiny" para espanol real (entrevistas largas/ruidosas) sin llegar a
-    // la lentitud de "medium" en una laptop sin GPU.
-    inline constexpr std::string_view DEFAULT_WHISPER_MODEL_PATH = "./models/ggml-small.bin";
+    // "large-v3" (~3.1GB): la mayor fidelidad disponible para espanol real
+    // (entrevistas largas/ruidosas, vocabulario de dominio). Pensado para
+    // correr en GPU (Vulkan, ver ADR-020); en una maquina solo CPU conviene
+    // WHISPER_MODEL_PATH=./models/ggml-small.bin (large es varias veces mas lento).
+    inline constexpr std::string_view DEFAULT_WHISPER_MODEL_PATH = "./models/ggml-large-v3.bin";
     // VAD (Silero) de whisper.cpp: salta silencios/ruido, donde whisper suele
     // empezar a alucinar repeticiones. Opcional: sin el archivo, no hay VAD.
     inline constexpr std::string_view DEFAULT_WHISPER_VAD_MODEL_PATH = "./models/ggml-silero-v5.1.2.bin";
+
+    // Diarizacion acustica (sherpa-onnx, ver ADR-021). Todo opcional: sin
+    // estos archivos se transcribe igual, sin identificar hablantes.
+    // Carpeta con sherpa-onnx-c-api.dll + onnxruntime.dll (release v1.13.8).
+    inline constexpr std::string_view DEFAULT_DIARIZATION_LIB_DIR = "./sherpa-onnx";
+    inline constexpr std::string_view DEFAULT_DIARIZATION_SEGMENTATION_MODEL = "./models/sherpa-onnx-pyannote-segmentation-3-0.onnx";
+    // Elegido en el spike sobre una entrevista real de 36 min: mismo resultado
+    // que wespeaker-resnet34 (367/369 segmentos coinciden) y ~30% mas rapido.
+    inline constexpr std::string_view DEFAULT_DIARIZATION_EMBEDDING_MODEL = "./models/3dspeaker_speech_campplus_sv_zh_en_16k-common_advanced.onnx";
 }
 #endif // CONSTANST_H

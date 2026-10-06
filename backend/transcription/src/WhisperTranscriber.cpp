@@ -1,15 +1,18 @@
 #include "../include/WhisperTranscriber.h"
 #include "../../api/include/logger.h"
+#include "../../audio/include/WavReader.h"
 
+#include <ggml-backend.h>
 #include <whisper.h>
 
 #include <algorithm>
+#include <array>
 #include <cctype>
 #include <cstdint>
 #include <cstdio>
 #include <filesystem>
-#include <fstream>
 #include <stdexcept>
+#include <string_view>
 #include <thread>
 #include <vector>
 
@@ -17,100 +20,90 @@ namespace hermes::transcription {
 
 namespace {
 
-struct WavData {
-    std::vector<float> samples;  // mono, normalizado a [-1, 1]
-};
-
-// Lee el WAV canonico de 44 bytes que escribe FfmpegAudioNormalizer
-// (PCM 16-bit, 16kHz, mono). No es un parser WAV general: si algun dia
-// IAudioNormalizer cambia de formato de salida, esto tiene que cambiar
-// junto con el.
-WavData readNormalizedWav(const std::string& path) {
-    std::ifstream in(path, std::ios::binary);
-    if (!in.is_open()) {
-        throw std::runtime_error("No se pudo abrir el audio normalizado: " + path);
-    }
-
-    char riffTag[4];
-    char waveTag[4];
-    in.read(riffTag, 4);
-    in.seekg(4, std::ios::cur);  // tamaño total RIFF, no lo necesitamos
-    in.read(waveTag, 4);
-    if (std::string(riffTag, 4) != "RIFF" || std::string(waveTag, 4) != "WAVE") {
-        throw std::runtime_error("El audio normalizado no es un WAV valido: " + path);
-    }
-
-    // Busca el chunk "data" en vez de asumir el offset fijo 44: es barato
-    // y tolera que el header traiga chunks extra si el normalizador cambia.
-    char chunkId[4];
-    uint32_t chunkSize = 0;
-    std::streamoff dataOffset = -1;
-    while (in.read(chunkId, 4)) {
-        in.read(reinterpret_cast<char*>(&chunkSize), 4);
-        if (std::string(chunkId, 4) == "data") {
-            dataOffset = in.tellg();
-            break;
-        }
-        in.seekg(chunkSize, std::ios::cur);
-    }
-
-    if (dataOffset < 0) {
-        throw std::runtime_error("El audio normalizado no tiene chunk 'data': " + path);
-    }
-
-    const size_t sampleCount = chunkSize / sizeof(int16_t);
-    std::vector<int16_t> raw(sampleCount);
-    in.read(reinterpret_cast<char*>(raw.data()), chunkSize);
-
-    WavData wav;
-    wav.samples.resize(sampleCount);
-    for (size_t i = 0; i < sampleCount; ++i) {
-        wav.samples[i] = static_cast<float>(raw[i]) / 32768.0f;
-    }
-    return wav;
-}
-
-// whisper_full_get_segment_t0/t1 devuelven el tiempo en centisegundos
-// (unidades de 10ms), no milisegundos directos - ver whisper.cpp
-// Architecture en la vault.
-std::string formatTimestamp(int64_t centiseconds) {
-    const int64_t totalMs = centiseconds * 10;
-    const int64_t totalSeconds = totalMs / 1000;
-    const int64_t hours = totalSeconds / 3600;
-    const int64_t minutes = (totalSeconds % 3600) / 60;
-    const int64_t seconds = totalSeconds % 60;
-
-    char buf[16];
-    std::snprintf(buf, sizeof(buf), "%02lld:%02lld:%02lld",
-                  static_cast<long long>(hours), static_cast<long long>(minutes), static_cast<long long>(seconds));
-    return std::string(buf);
-}
-
 constexpr int SAMPLE_RATE = 16000;
 constexpr int64_t SAMPLES_PER_CENTISECOND = SAMPLE_RATE / 100;
 
-// Tokens de texto previo con los que se condiciona cada ventana de 30s en
-// la pasada principal. El default de whisper.cpp (16384, acotado a 224) es
-// lo que deja que una repeticion se autoalimente hasta el final del audio:
-// entrevista 13, "que no se cumplen los plazos" x114 durante 43:26-49:08.
-// Un contexto corto conserva algo de continuidad sin arrastrar el bucle.
-constexpr int MAIN_PASS_MAX_TEXT_CTX = 64;
+// Tokens de texto previo (de la ventana anterior) con los que se condiciona
+// cada ventana de 30s en la pasada principal: ninguno. El texto previo es lo
+// que arrastra derivas hasta el final del audio:
+// - entrevista 13: "que no se cumplen los plazos" x114 durante 43:26-49:08
+//   (con el default de whisper.cpp, 224 tokens);
+// - entrevista 6 con large-v3: con 64 tokens, una ventana sin puntuar en el
+//   minuto 18 dejo sin puntuacion ni mayusculas el resto de la entrevista.
+// En su lugar cada ventana se condiciona solo con el prompt fijo (glosario +
+// STYLE_PROMPT, ver buildInitialPrompt), que siempre esta bien puntuado.
+constexpr int MAIN_PASS_MAX_TEXT_CTX = 0;
+
+// Frase de estilo que se repite como contexto en cada ventana: whisper imita
+// la forma del texto previo, asi que un ejemplo con puntuacion, tildes y
+// signos de pregunta sostiene ese estilo durante toda la entrevista. Va al
+// final del prompt (lo mas cercano al audio, lo que mas pesa).
+constexpr std::string_view STYLE_PROMPT = "Transcripción fiel de una entrevista, con puntuación, tildes y signos de pregunta: ¿cómo funciona? Bien, se lo explico.";
 
 // Segmentos consecutivos con el mismo texto a partir de los cuales se
 // considera un bucle de alucinacion. En habla real una misma frase no se
 // repite 4 veces seguidas como segmentos separados.
 constexpr size_t LOOP_MIN_REPEATS = 4;
 
-// Beam search solo en la re-transcripcion de tramos en bucle: mas robusto
-// que greedy, pero varias veces mas lento - inaceptable para la entrevista
-// entera en CPU, aceptable para unos minutos.
-constexpr int RETRY_BEAM_SIZE = 5;
+// Beam search: mas robusto que greedy (menos palabras inventadas/omitidas),
+// pero varias veces mas lento. En GPU se usa en la pasada principal; en CPU
+// solo para re-transcribir tramos en bucle (unos minutos, no la entrevista).
+constexpr int BEAM_SIZE = 5;
 
-// Tope de tokens del glosario como initial_prompt. whisper.cpp acota todo el
-// contexto de texto a n_text_ctx/2 = 224 tokens (whisper.cpp:6913); con 150
-// para el glosario quedan los 64 de MAIN_PASS_MAX_TEXT_CTX + el marcador.
+// Tope de tokens del prompt inicial (glosario + STYLE_PROMPT). whisper.cpp
+// acota todo el contexto de texto a n_text_ctx/2 = 224 tokens
+// (whisper.cpp:6913); 150 deja margen para el marcador de contexto previo.
 constexpr int MAX_PROMPT_TOKENS = 150;
 constexpr int WHISPER_MAX_TEXT_CTX = 224;
+
+// Parametros del VAD (Silero). Los defaults de whisper.cpp recortan de mas
+// para entrevistas: 30ms de padding come el inicio/fin de las palabras y
+// 100ms de silencio parte frases en pausas normales de quien piensa lo que
+// dice. Valores de partida a validar con el A/B (ver ADR-020).
+constexpr float VAD_THRESHOLD = 0.45f;
+constexpr int VAD_MIN_SPEECH_MS = 250;
+constexpr int VAD_MIN_SILENCE_MS = 400;
+constexpr int VAD_SPEECH_PAD_MS = 200;
+constexpr float VAD_MAX_SPEECH_S = 30.0f;
+
+// Modelos por encima de este tamaño (medium, large-v3) en CPU son varias
+// veces mas lentos que small: se avisa en el log para que no parezca colgado.
+constexpr std::uintmax_t LARGE_MODEL_BYTES = 1'000'000'000;
+
+// Frases que whisper inventa en silencios o ruido porque aparecen al final
+// de muchos videos subtitulados con los que fue entrenado. Solo se descarta
+// un segmento si su texto COMPLETO (normalizado) es una de estas y dura
+// poco: una persona real puede decir "gracias" en una entrevista.
+constexpr int64_t HALLUCINATION_MAX_CS = 300;
+constexpr std::array<std::string_view, 5> HALLUCINATION_PHRASES = {
+    "graciasporverelvideo",
+    "graciasporver",
+    "suscribetealcanal",
+    "noolvidessuscribirte",
+    "subtitulosrealizadosporlacomunidaddeamaraorg",
+};
+
+// Densidad maxima creible de texto por segmento. El habla real en espanol
+// ronda 12-18 caracteres por segundo; whisper (large-v3, sobre todo) a veces
+// emite segmentos de ~0.1s con una frase entera repetida de lo dicho justo
+// antes (entrevista 6, 01:49: tres copias de la pregunta en 100-360ms). El
+// margen fijo protege monosilabos ("Sí.") con tiempos muy ajustados. Validado
+// sobre los 379 segmentos de esa entrevista: marca solo las 3 alucinaciones.
+constexpr double MAX_CHARS_PER_SECOND = 35.0;
+constexpr size_t DENSITY_MARGIN_CHARS = 10;
+
+size_t utf8Length(const std::string& text) {
+    size_t count = 0;
+    for (unsigned char c : text) {
+        if ((c & 0xC0) != 0x80) ++count;  // no cuenta bytes de continuacion
+    }
+    return count;
+}
+
+bool isImplausiblyDense(const RawSegment& segment) {
+    const double seconds = static_cast<double>(std::max<int64_t>(segment.t1 - segment.t0, 0)) / 100.0;
+    return static_cast<double>(utf8Length(segment.text)) > seconds * MAX_CHARS_PER_SECOND + DENSITY_MARGIN_CHARS;
+}
 
 // Texto comparable: minusculas, sin puntuacion ni espacios ("Que no se
 // cumplen los plazos," == "que no se cumplen los plazos"). Los bytes no
@@ -124,6 +117,15 @@ std::string normalizeForComparison(const std::string& text) {
         }
     }
     return normalized;
+}
+
+bool isKnownHallucination(const RawSegment& segment) {
+    if (segment.t1 - segment.t0 > HALLUCINATION_MAX_CS) return false;
+    const std::string normalized = normalizeForComparison(segment.text);
+    if (normalized.empty()) return false;
+    // "amara.org" aparece con variantes (con/sin tilde en "subtítulos").
+    if (normalized.find("amaraorg") != std::string::npos) return true;
+    return std::find(HALLUCINATION_PHRASES.begin(), HALLUCINATION_PHRASES.end(), normalized) != HALLUCINATION_PHRASES.end();
 }
 
 struct RepeatRun {
@@ -157,17 +159,10 @@ std::string formatClock(int64_t centiseconds) {
     return std::string(buf);
 }
 
-struct WhisperContextDeleter {
-    void operator()(whisper_context* ctx) const {
-        if (ctx) whisper_free(ctx);
-    }
-};
-
-// Sin esto, un audio largo (la transcripcion de una entrevista real de
-// 70min tarda ~12 min) no deja ningun rastro en el log entre "Transcribiendo
-// con whisper.cpp" y el resultado final - parece trabado aunque este
-// funcionando. Se loguea cada 10% en vez de en cada llamada (whisper.cpp
-// invoca este callback muy seguido).
+// Sin esto, un audio largo no deja ningun rastro en el log entre
+// "Transcribiendo con whisper.cpp" y el resultado final - parece trabado
+// aunque este funcionando. Se loguea cada 10% en vez de en cada llamada
+// (whisper.cpp invoca este callback muy seguido).
 struct ProgressLogState {
     int lastLoggedPercent = -1;
 };
@@ -181,13 +176,11 @@ void logWhisperProgress(struct whisper_context* /*ctx*/, struct whisper_state* /
 }
 
 // whisper.cpp decodifica por token BPE, no por caracter: en audio largo/
-// ruidoso (o con modelos chicos como ggml-tiny) puede emitir un token cuyos
-// bytes truncan una secuencia UTF-8 multibyte a mitad de camino. Eso
-// produce texto con bytes invalidos que nlohmann::json::dump() rechaza con
-// type_error.316 ("invalid UTF-8 byte") - visto en produccion con un audio
-// real de mas de 100MB. Se repara reemplazando cualquier secuencia
-// invalida por el caracter de reemplazo U+FFFD, en vez de dejar que
-// el error tumbe el job entero.
+// ruidoso puede emitir un token cuyos bytes truncan una secuencia UTF-8
+// multibyte a mitad de camino. Eso produce texto con bytes invalidos que
+// nlohmann::json::dump() rechaza con type_error.316 - visto en produccion
+// con un audio real de mas de 100MB. Se repara reemplazando cualquier
+// secuencia invalida por U+FFFD, en vez de dejar que el error tumbe el job.
 std::string sanitizeUtf8(const std::string& input) {
     std::string output;
     output.reserve(input.size());
@@ -227,10 +220,22 @@ std::string sanitizeUtf8(const std::string& input) {
     return output;
 }
 
+std::string trimSpaces(const std::string& text) {
+    const size_t first = text.find_first_not_of(" \t\r\n");
+    if (first == std::string::npos) return "";
+    const size_t last = text.find_last_not_of(" \t\r\n");
+    return text.substr(first, last - first + 1);
+}
+
+// Dispositivo GPU que ggml ve en este build (Vulkan), o nullptr si no hay
+// ninguno (build sin backend GPU, o maquina sin driver Vulkan).
+ggml_backend_dev_t findGpuDevice() {
+    return ggml_backend_dev_by_type(GGML_BACKEND_DEVICE_TYPE_GPU);
+}
+
 }  // namespace
 
-WhisperTranscriber::WhisperTranscriber(std::string modelPath, std::string language, std::string vadModelPath)
-    : m_modelPath(std::move(modelPath)), m_language(std::move(language)), m_vadModelPath(std::move(vadModelPath)) {}
+WhisperTranscriber::WhisperTranscriber(WhisperOptions options) : m_options(std::move(options)) {}
 
 WhisperTranscriber::~WhisperTranscriber() {
     if (m_context) {
@@ -243,37 +248,77 @@ void WhisperTranscriber::ensureModelLoaded() {
         return;
     }
 
-    if (!std::filesystem::exists(m_modelPath)) {
+    if (!std::filesystem::exists(m_options.modelPath)) {
         throw std::runtime_error(
-            "Modelo de whisper.cpp no encontrado en '" + m_modelPath +
+            "Modelo de whisper.cpp no encontrado en '" + m_options.modelPath +
             "'. Descargalo con models/download-ggml-model.sh (whisper.cpp) o desde "
             "https://huggingface.co/ggerganov/whisper.cpp y coloca el .bin en esa ruta "
             "(configurable con la env var WHISPER_MODEL_PATH). Ver 'whisper.cpp Architecture' en la vault.");
     }
 
-    whisper_context_params params = whisper_context_default_params();
-    params.use_gpu = false;  // build sin cuda/metal/vulkan (ver vcpkg.json) - CPU only
-    // El default de whisper.cpp 1.8.6 trae flash_attn=true incluso sin GPU.
-    // La ruta CPU de flash attention crasheo en este build (MinGW estatico,
-    // sin excepcion capturable - acceso a memoria invalido). Desactivado:
-    // preferimos correcto sobre rapido para un researcher local.
-    params.flash_attn = false;
+    ggml_backend_dev_t gpuDevice = nullptr;
+    if (m_options.gpuMode != GpuMode::Off) {
+        gpuDevice = findGpuDevice();
+        if (!gpuDevice) {
+            log_event("[WhisperTranscriber][ensureModelLoaded] No se detecto GPU compatible (Vulkan), se usa CPU");
+        }
+    }
 
-    m_context = whisper_init_from_file_with_params(m_modelPath.c_str(), params);
+    auto load = [this](bool useGpu) {
+        whisper_context_params params = whisper_context_default_params();
+        params.use_gpu = useGpu;
+        // El default de whisper.cpp 1.8.6 trae flash_attn=true. La ruta CPU
+        // de flash attention crasheo en este build (MinGW estatico, acceso a
+        // memoria invalido sin excepcion capturable): solo se activa en GPU.
+        params.flash_attn = useGpu;
+        return whisper_init_from_file_with_params(m_options.modelPath.c_str(), params);
+    };
+
+    if (gpuDevice) {
+        m_context = load(true);
+        if (m_context) {
+            m_gpuActive = true;
+            log_event(std::string("[WhisperTranscriber][ensureModelLoaded] Modelo cargado en GPU: ") +
+                      ggml_backend_dev_description(gpuDevice) + " (" + m_options.modelPath + ")");
+            return;
+        }
+        log_event("[WhisperTranscriber][ensureModelLoaded] No se pudo cargar el modelo en GPU, se reintenta en CPU");
+    }
+
+    m_context = load(false);
     if (!m_context) {
-        throw std::runtime_error("whisper.cpp no pudo cargar el modelo: " + m_modelPath);
+        throw std::runtime_error("whisper.cpp no pudo cargar el modelo: " + m_options.modelPath);
+    }
+    m_gpuActive = false;
+    log_event("[WhisperTranscriber][ensureModelLoaded] Modelo cargado en CPU (" + m_options.modelPath + ")");
+
+    std::error_code ec;
+    if (std::filesystem::file_size(m_options.modelPath, ec) > LARGE_MODEL_BYTES && !ec) {
+        log_event("[WhisperTranscriber][ensureModelLoaded] Modelo grande en CPU: la transcripcion sera varias veces mas "
+                  "lenta. Para CPU conviene WHISPER_MODEL_PATH=./models/ggml-small.bin");
     }
 }
 
-std::string WhisperTranscriber::buildGlossaryPrompt(const std::vector<std::string>& keywords, int& promptTokens) {
-    promptTokens = 0;
-    std::string prompt;
+std::string WhisperTranscriber::buildInitialPrompt(const std::vector<std::string>& keywords, int& promptTokens) {
     std::vector<whisper_token> tokens(MAX_PROMPT_TOKENS * 2);
+    auto countTokens = [&](const std::string& text) {
+        return whisper_tokenize(m_context, text.c_str(), tokens.data(), static_cast<int>(tokens.size()));
+    };
+
+    const std::string style(STYLE_PROMPT);
+    std::string prompt = style;
+    promptTokens = countTokens(prompt);
+
+    // "Glosario: a, b, c. <estilo>": se agregan terminos mientras entren en
+    // MAX_PROMPT_TOKENS junto con la frase de estilo.
+    std::string glossary;
     size_t used = 0;
     for (const auto& keyword : keywords) {
-        const std::string candidate = (prompt.empty() ? "Glosario: " : prompt.substr(0, prompt.size() - 1) + ", ") + keyword + ".";
-        const int n = whisper_tokenize(m_context, candidate.c_str(), tokens.data(), static_cast<int>(tokens.size()));
+        const std::string candidateGlossary = (glossary.empty() ? "Glosario: " : glossary.substr(0, glossary.size() - 1) + ", ") + keyword + ".";
+        const std::string candidate = candidateGlossary + " " + style;
+        const int n = countTokens(candidate);
         if (n < 0 || n > MAX_PROMPT_TOKENS) break;
+        glossary = candidateGlossary;
         prompt = candidate;
         promptTokens = n;
         ++used;
@@ -291,42 +336,49 @@ std::vector<TranscriptSegment> WhisperTranscriber::transcribe(const std::string&
 
     ensureModelLoaded();
 
-    WavData wav = readNormalizedWav(audioPath);
-    if (wav.samples.empty()) {
+    const std::vector<float> samples = hermes::audio::readNormalizedWav(audioPath);
+    if (samples.empty()) {
         throw std::runtime_error("El audio normalizado esta vacio: " + audioPath);
     }
 
-    const bool useVad = std::filesystem::exists(m_vadModelPath);
+    const bool useVad = std::filesystem::exists(m_options.vadModelPath);
     if (!useVad) {
-        log_event("[WhisperTranscriber][transcribe] Modelo VAD no encontrado en '" + m_vadModelPath +
+        log_event("[WhisperTranscriber][transcribe] Modelo VAD no encontrado en '" + m_options.vadModelPath +
                   "', se transcribe sin VAD (mayor riesgo de repeticiones alucinadas en silencios). "
                   "Configurable con WHISPER_VAD_MODEL_PATH.");
     }
 
-    // Glosario (ADR-018): carry_initial_prompt lo repite en cada ventana de
-    // 30s, no solo en la primera. n_max_text_ctx es el presupuesto TOTAL de
-    // contexto (glosario + texto previo), asi que se le suma el glosario
-    // para no comerse el contexto dinamico.
+    // Prompt fijo (glosario ADR-018 + estilo): carry_initial_prompt lo repite
+    // en cada ventana de 30s, no solo en la primera. n_max_text_ctx es el
+    // presupuesto TOTAL de contexto (prompt + texto previo), asi que se le
+    // suma el prompt para no comerse el contexto dinamico.
     int promptTokens = 0;
-    const std::string glossaryPrompt = buildGlossaryPrompt(options.keywords, promptTokens);
-    auto applyGlossary = [&](whisper_full_params& p, int dynamicContext) {
-        if (promptTokens == 0) {
+    const std::string initialPrompt = buildInitialPrompt(options.keywords, promptTokens);
+    auto applyPrompt = [&](whisper_full_params& p, int dynamicContext) {
+        if (promptTokens <= 0) {
             p.n_max_text_ctx = dynamicContext;
             return;
         }
-        p.initial_prompt = glossaryPrompt.c_str();
+        p.initial_prompt = initialPrompt.c_str();
         p.carry_initial_prompt = true;
         p.n_max_text_ctx = std::min(WHISPER_MAX_TEXT_CTX, promptTokens + 1 + dynamicContext);
     };
 
-    // Pasada principal: greedy, contexto previo acotado.
-    whisper_full_params params = whisper_full_default_params(WHISPER_SAMPLING_GREEDY);
-    applyGlossary(params, MAIN_PASS_MAX_TEXT_CTX);
+    // Pasada principal: beam search en GPU (fidelidad), greedy en CPU
+    // (velocidad). Sin texto previo en ambos casos (ver MAIN_PASS_MAX_TEXT_CTX).
+    whisper_full_params params = whisper_full_default_params(m_gpuActive ? WHISPER_SAMPLING_BEAM_SEARCH : WHISPER_SAMPLING_GREEDY);
+    if (m_gpuActive) {
+        params.beam_search.beam_size = BEAM_SIZE;
+    }
+    applyPrompt(params, MAIN_PASS_MAX_TEXT_CTX);
     ProgressLogState progressLogState;
     params.progress_callback = logWhisperProgress;
     params.progress_callback_user_data = &progressLogState;
+    log_event(std::string("[WhisperTranscriber][transcribe] Pasada principal: ") +
+              (m_gpuActive ? "GPU, beam search " + std::to_string(BEAM_SIZE) : std::string("CPU, greedy")) +
+              (useVad ? ", con VAD" : ", sin VAD"));
 
-    std::vector<RawSegment> segments = runWhisper(params, wav.samples.data(), wav.samples.size(), 0, useVad);
+    std::vector<RawSegment> segments = runWhisper(params, samples.data(), samples.size(), 0, useVad);
 
     // Reparacion de bucles: se recorre de atras hacia adelante para que
     // reemplazar un tramo no invalide los indices de los tramos anteriores.
@@ -341,14 +393,14 @@ std::vector<TranscriptSegment> WhisperTranscriber::transcribe(const std::string&
         // Sin texto previo (contexto dinamico 0): el bucle se alimentaba
         // justamente de eso. El glosario, si hay, se mantiene.
         whisper_full_params retryParams = whisper_full_default_params(WHISPER_SAMPLING_BEAM_SEARCH);
-        retryParams.beam_search.beam_size = RETRY_BEAM_SIZE;
-        applyGlossary(retryParams, 0);
+        retryParams.beam_search.beam_size = BEAM_SIZE;
+        applyPrompt(retryParams, 0);
 
-        const size_t firstSample = std::min(wav.samples.size(), static_cast<size_t>(t0 * SAMPLES_PER_CENTISECOND));
-        const size_t lastSample = std::min(wav.samples.size(), static_cast<size_t>(t1 * SAMPLES_PER_CENTISECOND));
+        const size_t firstSample = std::min(samples.size(), static_cast<size_t>(t0 * SAMPLES_PER_CENTISECOND));
+        const size_t lastSample = std::min(samples.size(), static_cast<size_t>(t1 * SAMPLES_PER_CENTISECOND));
         std::vector<RawSegment> retry;
         if (lastSample > firstSample) {
-            retry = runWhisper(retryParams, wav.samples.data() + firstSample, lastSample - firstSample, t0, useVad);
+            retry = runWhisper(retryParams, samples.data() + firstSample, lastSample - firstSample, t0, useVad);
         }
 
         std::vector<RawSegment> replacement;
@@ -362,7 +414,7 @@ std::vector<TranscriptSegment> WhisperTranscriber::transcribe(const std::string&
             const std::string lost = formatClock(firstOccurrence.t1) + "-" + formatClock(t1);
             log_event("[WhisperTranscriber][transcribe] No se pudo recuperar el tramo, se marca como no transcrito: " + lost);
             replacement.push_back(firstOccurrence);
-            replacement.push_back({firstOccurrence.t1, t1, "[audio no transcrito " + lost + "]"});
+            replacement.push_back({firstOccurrence.t1, t1, "[audio no transcrito " + lost + "]", {}});
         }
 
         segments.erase(segments.begin() + it->first, segments.begin() + it->last + 1);
@@ -371,8 +423,19 @@ std::vector<TranscriptSegment> WhisperTranscriber::transcribe(const std::string&
 
     std::vector<TranscriptSegment> result;
     result.reserve(segments.size());
-    for (const auto& segment : segments) {
-        result.push_back({formatTimestamp(segment.t0), formatTimestamp(segment.t1), segment.text});
+    for (auto& segment : segments) {
+        if (isKnownHallucination(segment)) {
+            log_event("[WhisperTranscriber][transcribe] Segmento descartado por alucinacion conocida (" +
+                      formatClock(segment.t0) + "): " + segment.text);
+            continue;
+        }
+        if (isImplausiblyDense(segment)) {
+            log_event("[WhisperTranscriber][transcribe] Segmento descartado por densidad imposible (" +
+                      std::to_string(utf8Length(segment.text)) + " caracteres en " +
+                      std::to_string((segment.t1 - segment.t0) * 10) + "ms, " + formatClock(segment.t0) + "): " + segment.text);
+            continue;
+        }
+        result.push_back({segment.t0 * 10, segment.t1 * 10, std::move(segment.text), std::move(segment.words)});
     }
     return result;
 }
@@ -382,17 +445,32 @@ std::vector<RawSegment> WhisperTranscriber::runWhisper(whisper_full_params param
                                                        size_t sampleCount,
                                                        int64_t offsetCs,
                                                        bool useVad) {
-    params.language = m_language.c_str();
+    params.language = m_options.language.c_str();
     params.print_progress = false;
     params.print_realtime = false;
     params.print_special = false;
     params.print_timestamps = false;
     // No conviene paralelizar de mas en una laptop de researcher (mismo
-    // criterio que WORKER_POOL_SIZE=1 por defecto en Sprint 4).
+    // criterio que WORKER_POOL_SIZE=1 por defecto en Sprint 4). Con GPU los
+    // hilos de CPU pesan poco igual.
     params.n_threads = static_cast<int>(std::min(4u, std::thread::hardware_concurrency()));
-    // whisper.cpp remapea los timestamps al audio original cuando usa VAD.
+    // Descarta tokens de no-habla ("[Música]", "♪", "(risas)"): no son
+    // contenido de la entrevista y confunden la diarizacion/correccion.
+    params.suppress_nst = true;
+    // Tiempos por token, para ubicar cada palabra (ver extractWords).
+    params.token_timestamps = true;
+    // whisper.cpp remapea los timestamps de SEGMENTO al audio original cuando
+    // usa VAD (no los de token - ver extractWords).
     params.vad = useVad;
-    params.vad_model_path = useVad ? m_vadModelPath.c_str() : nullptr;
+    params.vad_model_path = useVad ? m_options.vadModelPath.c_str() : nullptr;
+    if (useVad) {
+        params.vad_params = whisper_vad_default_params();
+        params.vad_params.threshold = VAD_THRESHOLD;
+        params.vad_params.min_speech_duration_ms = VAD_MIN_SPEECH_MS;
+        params.vad_params.min_silence_duration_ms = VAD_MIN_SILENCE_MS;
+        params.vad_params.speech_pad_ms = VAD_SPEECH_PAD_MS;
+        params.vad_params.max_speech_duration_s = VAD_MAX_SPEECH_S;
+    }
 
     if (whisper_full(m_context, params, samples, static_cast<int>(sampleCount)) != 0) {
         throw std::runtime_error("whisper.cpp fallo al transcribir");
@@ -402,13 +480,69 @@ std::vector<RawSegment> WhisperTranscriber::runWhisper(whisper_full_params param
     std::vector<RawSegment> segments;
     segments.reserve(segmentCount);
     for (int i = 0; i < segmentCount; ++i) {
-        segments.push_back({
-            offsetCs + whisper_full_get_segment_t0(m_context, i),
-            offsetCs + whisper_full_get_segment_t1(m_context, i),
-            sanitizeUtf8(whisper_full_get_segment_text(m_context, i)),
-        });
+        const int64_t t0 = offsetCs + whisper_full_get_segment_t0(m_context, i);
+        const int64_t t1 = offsetCs + whisper_full_get_segment_t1(m_context, i);
+        segments.push_back({t0, t1, sanitizeUtf8(whisper_full_get_segment_text(m_context, i)), extractWords(i, t0, t1)});
     }
     return segments;
+}
+
+std::vector<TranscriptWord> WhisperTranscriber::extractWords(int segmentIndex, int64_t segT0Cs, int64_t segT1Cs) {
+    // Agrupa tokens BPE en palabras: un token que empieza con espacio abre
+    // una palabra nueva. Los tokens especiales (timestamps, [_BEG_], etc.)
+    // tienen id >= eot y no son texto.
+    struct PendingWord {
+        std::string text;
+        int64_t rawT0;
+        int64_t rawT1;
+    };
+    std::vector<PendingWord> pending;
+    const whisper_token eot = whisper_token_eot(m_context);
+    const int tokenCount = whisper_full_n_tokens(m_context, segmentIndex);
+    for (int k = 0; k < tokenCount; ++k) {
+        const whisper_token_data data = whisper_full_get_token_data(m_context, segmentIndex, k);
+        if (data.id >= eot) continue;
+        const std::string tokenText = whisper_full_get_token_text(m_context, segmentIndex, k);
+        if (tokenText.empty()) continue;
+        if (pending.empty() || tokenText.front() == ' ') {
+            pending.push_back({tokenText, data.t0, data.t1});
+        } else {
+            pending.back().text += tokenText;
+            pending.back().rawT1 = data.t1;
+        }
+    }
+
+    std::vector<TranscriptWord> words;
+    if (pending.empty()) return words;
+
+    // Los tiempos de token NO estan remapeados por el VAD (whisper.cpp 1.8.6
+    // solo remapea t0/t1 de segmento): estan en el tiempo del audio ya sin
+    // silencios. Se proyectan linealmente sobre el rango del segmento, que
+    // si esta en tiempo original. Sin VAD la proyeccion es casi la identidad.
+    // Es una aproximacion: alcanza para decidir de que lado de un cambio de
+    // hablante cae cada palabra.
+    const int64_t rawStart = pending.front().rawT0;
+    const int64_t rawEnd = std::max(pending.back().rawT1, rawStart);
+    const int64_t rawSpan = rawEnd - rawStart;
+    const int64_t segSpan = std::max<int64_t>(segT1Cs - segT0Cs, 0);
+    const size_t n = pending.size();
+    words.reserve(n);
+    for (size_t w = 0; w < n; ++w) {
+        int64_t startCs;
+        int64_t endCs;
+        if (rawSpan > 0) {
+            startCs = segT0Cs + (std::clamp(pending[w].rawT0, rawStart, rawEnd) - rawStart) * segSpan / rawSpan;
+            endCs = segT0Cs + (std::clamp(pending[w].rawT1, rawStart, rawEnd) - rawStart) * segSpan / rawSpan;
+        } else {
+            // Sin tiempos de token utiles: reparto uniforme.
+            startCs = segT0Cs + static_cast<int64_t>(w) * segSpan / static_cast<int64_t>(n);
+            endCs = segT0Cs + static_cast<int64_t>(w + 1) * segSpan / static_cast<int64_t>(n);
+        }
+        const std::string text = trimSpaces(sanitizeUtf8(pending[w].text));
+        if (text.empty()) continue;
+        words.push_back({startCs * 10, std::max(startCs, endCs) * 10, text});
+    }
+    return words;
 }
 
 }  // namespace hermes::transcription

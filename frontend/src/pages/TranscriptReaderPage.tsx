@@ -1,11 +1,19 @@
-import { Fragment, ReactNode, useEffect, useMemo, useRef, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Fragment, ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import { ApiError } from "../api/client";
-import { getInterview, getTranscript, transcriptDownloadUrl } from "../api/interviews";
-import type { InterviewDetail, TranscriptDocument } from "../api/types";
+import {
+  getInterview,
+  getTranscript,
+  restoreTranscript,
+  transcriptDownloadUrl,
+  updateTranscript,
+} from "../api/interviews";
+import type { InterviewDetail, SpeakerKey, TranscriptBlock, TranscriptDocument } from "../api/types";
+import { ConfirmDialog } from "../components/ConfirmDialog";
 import { ErrorBanner } from "../components/ErrorBanner";
 import { HermesMark } from "../components/HermesMark";
 import { AlertIcon, ArrowLeftIcon, DownloadIcon, SearchIcon } from "../components/Icons";
+import { TranscriptEditor } from "../components/TranscriptEditor";
 import { formatDuration, formatInterviewDate } from "../format";
 
 // Marcadores que deja la anonimizacion ("[PERSONA_1]", "[LUGAR_2]"...): se
@@ -53,6 +61,21 @@ function paragraphs(text: string): string[] {
     .filter(Boolean);
 }
 
+// De donde salen los turnos, para que quien lee sepa cuanto confiar en ellos.
+function speakerDisclaimer(transcript: TranscriptDocument): string {
+  if (!transcript.has_speakers) {
+    return "Transcripción automática tal como la produjo whisper, sin etiquetas de hablante. ";
+  }
+  switch (transcript.speaker_source) {
+    case "diarization":
+      return "Los hablantes se identificaron automáticamente por la voz y pueden tener errores, sobre todo en intervenciones muy cortas o superpuestas; se corrigen con «Editar». ";
+    case "manual":
+      return "Los turnos y hablantes fueron revisados y editados a mano. ";
+    default:
+      return "Los turnos los asignó un modelo de IA a partir del texto (no del audio) y pueden tener errores. ";
+  }
+}
+
 export function TranscriptReaderPage() {
   const { id } = useParams<{ id: string }>();
   const interviewId = Number(id);
@@ -62,12 +85,73 @@ export function TranscriptReaderPage() {
   const [error, setError] = useState<unknown>(null);
   const [search, setSearch] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
+  const navigate = useNavigate();
+
+  const [editing, setEditing] = useState(false);
+  const [dirty, setDirty] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [editError, setEditError] = useState<unknown>(null);
+  const [confirmLeave, setConfirmLeave] = useState(false);
 
   useEffect(() => {
     getTranscript(interviewId).then(setTranscript).catch(setError);
     // La ficha es complementaria: si falla, la transcripcion se lee igual.
     getInterview(interviewId).then(setDetail).catch(() => undefined);
   }, [interviewId]);
+
+  // Cambios sin guardar: el navegador pregunta antes de cerrar/recargar.
+  useEffect(() => {
+    if (!editing || !dirty) return;
+    const onBeforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, [editing, dirty]);
+
+  const onDirtyChange = useCallback((value: boolean) => setDirty(value), []);
+
+  const startEditing = () => {
+    setSearch("");
+    setEditError(null);
+    setEditing(true);
+  };
+
+  const stopEditing = () => {
+    setEditing(false);
+    setDirty(false);
+    setEditError(null);
+  };
+
+  const save = async (blocks: TranscriptBlock[]) => {
+    setSaving(true);
+    setEditError(null);
+    try {
+      setTranscript(await updateTranscript(interviewId, blocks));
+      stopEditing();
+    } catch (e) {
+      setEditError(e);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const restore = async () => {
+    setSaving(true);
+    setEditError(null);
+    try {
+      setTranscript(await restoreTranscript(interviewId));
+      stopEditing();
+    } catch (e) {
+      setEditError(e);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const labelFor = (key: SpeakerKey | null): string =>
+    transcript?.speakers.find((s) => s.key === key)?.label ?? "";
 
   const query = useMemo(() => {
     const trimmed = search.trim();
@@ -103,10 +187,19 @@ export function TranscriptReaderPage() {
   return (
     <section className="reader">
       <div className="reader-toolbar">
-        <Link to={`/interviews/${interviewId}`} className="back-link">
+        <Link
+          to={`/interviews/${interviewId}`}
+          className="back-link"
+          onClick={(e) => {
+            if (editing && dirty) {
+              e.preventDefault();
+              setConfirmLeave(true);
+            }
+          }}
+        >
           <ArrowLeftIcon /> Volver a la entrevista
         </Link>
-        {transcript && (
+        {transcript && !editing && (
           <div className="reader-actions">
             <label className="search-field reader-search">
               <SearchIcon />
@@ -123,6 +216,11 @@ export function TranscriptReaderPage() {
                 </span>
               )}
             </label>
+            {transcript.blocks.length > 0 && (
+              <button type="button" className="btn btn-secondary" onClick={startEditing}>
+                Editar
+              </button>
+            )}
             <button type="button" className="btn btn-primary" onClick={() => window.print()}>
               Imprimir / Guardar PDF
             </button>
@@ -193,13 +291,18 @@ export function TranscriptReaderPage() {
                 <p>{transcript.notice.replace(/^\[AVISO HERMES\]\s*/, "")}</p>
               </div>
             )}
+            {transcript.edited && transcript.summary && (
+              <div className="doc-alert" role="note">
+                <AlertIcon size={18} />
+                <p>El resumen se generó antes de las ediciones manuales de la transcripción.</p>
+              </div>
+            )}
             <div className="doc-alert">
               <AlertIcon size={18} />
               <p>
                 <strong>Documento para revisión.</strong>{" "}
-                {transcript.has_speakers
-                  ? "Los turnos Investigador/Entrevistado los asignó un modelo de IA a partir del texto (no del audio) y pueden tener errores. "
-                  : "Transcripción automática tal como la produjo whisper, sin corrección ni etiquetas de hablante. "}
+                {transcript.edited && <span className="doc-badge">Editado manualmente</span>}{" "}
+                {speakerDisclaimer(transcript)}
                 {markerCount > 0
                   ? `Se reemplazaron ${markerCount} datos personales por marcadores, pero la anonimización automática puede omitir nombres.`
                   : "El texto no contiene marcadores de anonimización: puede incluir nombres y otros datos personales."}{" "}
@@ -221,31 +324,57 @@ export function TranscriptReaderPage() {
 
           <section className="doc-section">
             <h2 className="doc-heading">Transcripción</h2>
-            {transcript.blocks.length === 0 && <p className="muted">La transcripción está vacía.</p>}
-            <div
-              ref={scrollRef}
-              className={`transcript-scroll ${transcript.has_speakers ? "turns" : "passages"}`}
-              tabIndex={0}
-              aria-label="Texto de la transcripción"
-            >
-              {transcript.blocks.map((block, i) => (
+            {editing ? (
+              <>
+                <ErrorBanner error={editError} />
+                <TranscriptEditor
+                  transcript={transcript}
+                  saving={saving}
+                  onSave={save}
+                  onCancel={stopEditing}
+                  onRestore={restore}
+                  onDirtyChange={onDirtyChange}
+                />
+              </>
+            ) : (
+              <>
+                {transcript.blocks.length === 0 && <p className="muted">La transcripción está vacía.</p>}
                 <div
-                  key={i}
-                  className={`turn${block.speaker ? ` turn-${block.speaker.toLowerCase()}` : ""}`}
+                  ref={scrollRef}
+                  className={`transcript-scroll ${transcript.has_speakers ? "turns" : "passages"}`}
+                  tabIndex={0}
+                  aria-label="Texto de la transcripción"
                 >
-                  <span className="turn-label">
-                    {block.speaker ?? (block.start != null ? formatTimestamp(block.start) : "")}
-                  </span>
-                  <p className="turn-text">{renderText(block.text, query)}</p>
+                  {transcript.blocks.map((block, i) => (
+                    <div key={i} className={`turn${block.speaker ? ` turn-${block.speaker}` : ""}`}>
+                      <span className="turn-label">
+                        {block.speaker ? labelFor(block.speaker) : block.start != null ? formatTimestamp(block.start) : ""}
+                        {block.speaker && block.start != null && (
+                          <span className="turn-time">{formatTimestamp(block.start)}</span>
+                        )}
+                      </span>
+                      <p className="turn-text">{renderText(block.text, query)}</p>
+                    </div>
+                  ))}
                 </div>
-              ))}
-            </div>
+              </>
+            )}
           </section>
 
           <footer className="doc-footer">
             Generado localmente con Hermes v0.1.0 · Entrevista #{interviewId} · Revisar antes de compartir
           </footer>
         </article>
+      )}
+
+      {confirmLeave && (
+        <ConfirmDialog
+          title="Salir sin guardar"
+          message="Hay cambios en la transcripción que no se guardaron y se van a perder."
+          confirmLabel="Salir sin guardar"
+          onConfirm={() => navigate(`/interviews/${interviewId}`)}
+          onCancel={() => setConfirmLeave(false)}
+        />
       )}
     </section>
   );

@@ -3,7 +3,10 @@
     "crow",
     "boost-uuid",
     "libmariadb",
-    "whisper-cpp",
+    {
+      "name": "whisper-cpp",
+      "features": ["vulkan"]
+    },
     {
       "name": "ffmpeg",
       "default-features": false,

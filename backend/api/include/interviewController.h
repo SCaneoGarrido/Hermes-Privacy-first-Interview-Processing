@@ -21,6 +21,10 @@ class InterviewController {
         // Transcripcion estructurada (bloques por hablante o parrafos con
         // marca de tiempo) para la vista de lectura del frontend.
         crow::response getTranscript(int id);
+        // Guarda la version editada en la vista de lectura (PUT) / la
+        // descarta y vuelve a la del pipeline (DELETE .../transcript/edits).
+        crow::response updateTranscript(const crow::request& req, int id);
+        crow::response restoreTranscript(int id);
 
     private:
         InterviewService& m_service;

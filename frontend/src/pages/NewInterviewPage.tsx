@@ -94,10 +94,15 @@ export function NewInterviewPage() {
           <input
             type="text"
             required
-            placeholder="p. ej. candidato, entrevistado"
+            maxLength={100}
+            placeholder="p. ej. Monitor GES, paciente, directivo"
             value={subjectType}
             onChange={(e) => setSubjectType(e.target.value)}
+            aria-describedby="subject-type-hint"
           />
+          <span id="subject-type-hint" className="muted small">
+            Se usa como nombre del entrevistado en la transcripción (el entrevistador figura como «Investigador»).
+          </span>
         </label>
 
         <button type="submit" className="btn btn-primary" disabled={submitting}>

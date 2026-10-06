@@ -66,7 +66,13 @@ add_executable(backend
                 jobs/src/InterviewJobRepository.cpp
                 jobs/src/InterviewProcessingJobHandler.cpp
                 audio/src/FfmpegAudioNormalizer.cpp
+                audio/src/WavReader.cpp
                 transcription/src/WhisperTranscriber.cpp
+                diarization/src/SherpaOnnxDiarizer.cpp
+                diarization/src/SpeakerAssigner.cpp
+                transcript/src/TranscriptModel.cpp
+                transcript/src/TranscriptRenderer.cpp
+                transcript/src/FileTranscriptStore.cpp
                 llm/src/OllamaClient.cpp
                 llm/src/TranscriptEnhancer.cpp
                 llm/src/GlossarySanitizer.cpp

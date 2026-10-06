@@ -17,8 +17,27 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/), versionado se
   - Los cambios aplicados quedan en `glossary_changes.txt`.
 - Vista de lectura de la transcripción en la app (ADR-019): portada con la ficha y el aviso de revisión, resumen, turnos por hablante o párrafos con marca de tiempo, búsqueda y marcadores de anonimización resaltados. "Imprimir / Guardar PDF" desde el navegador. Nuevo endpoint `GET /api/v1/interview/:id/transcript`.
 - Reemplazo del audio de una entrevista: borra el audio anterior y el resultado previo, con confirmación en el frontend.
+- **Identificación de hablantes por la voz** (diarización acústica local con sherpa-onnx, ADR-021). **En pruebas.**
+  - Nuevo paso `diarizando`.
+  - Cada turno se etiqueta como "Investigador" o con el tipo de sujeto de la entrevista (ej. "Monitor GES").
+  - Agrupación por umbral y reducción a dos roles: el grupo que más pregunta es el investigador.
+  - Validada en dos entrevistas reales. En audio con voces muy parecidas o diálogo muy rápido puede no separar, y entonces entrega la transcripción sin hablantes.
+  - Opcional: sin la DLL y los modelos se transcribe igual, sin hablantes.
+- Capturas de la interfaz en el README.
+- **Aceleración por GPU (Vulkan)** para whisper.cpp, con caída automática a CPU (`WHISPER_USE_GPU`, ADR-020).
+- **Edición de la transcripción en la vista de lectura** (ADR-022).
+  - Texto y hablante por turno; dividir, unir y eliminar turnos; intercambiar los dos hablantes.
+  - Nuevos `PUT /interview/:id/transcript` y `DELETE /interview/:id/transcript/edits`.
+  - La versión original se conserva y se puede restaurar. Reprocesar descarta las ediciones, con aviso previo.
 
 ### Changed
+
+- **Mayor fidelidad de transcripción por defecto** (ADR-020):
+  - modelo `ggml-large-v3`, beam search en GPU;
+  - VAD ajustado para no recortar palabras ni partir frases;
+  - se descartan tokens de no-habla ("[Música]") y alucinaciones conocidas de subtítulos.
+- La transcripción entregada se guarda estructurada (`transcript_segments.json`) con hablante y tiempos en ms por turno. El `.txt` y la vista de lectura se generan a partir de ella. La descarga refleja las ediciones y el nombre de sujeto actual (ADR-022).
+- La corrección con IA (`enhance_transcript`) ya no asigna hablantes. Corrige turno por turno y, si el modelo omite o altera demasiado una línea, conserva el texto original: deja de perderse contenido en los cortes de bloque.
 
 - Rediseño visual del frontend con identidad griega clásica (paleta de cerámica ática, títulos epigráficos, meandro, íconos y logo propios). Lista con contadores, búsqueda y filtros; detalle organizado por estado con recorrido de pasos del procesamiento. Sin dependencias nuevas.
 - `POST /upload` valida antes de escribir el archivo: `404` si la entrevista no existe, `409 INTERVIEW_BUSY` si se está procesando.
@@ -27,6 +46,7 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/), versionado se
 
 ### Fixed
 
+- La vista de lectura nunca mostraba marcas de tiempo: los inicios de segmento se leían como número desde un texto `"00:00:02"` y la lectura fallaba siempre.
 - El backend no se reconectaba a MySQL: tras un reinicio de MySQL respondía todo con "Server has gone away" hasta reiniciarlo. Ahora reconecta solo.
 - Subir un segundo audio a una entrevista fallaba con `Duplicate entry` y el archivo quedaba huérfano en `./uploads`. Ningún upload rechazado queda ya en disco.
 - Eliminar una entrevista dejaba sus transcripciones en `storage/interviews/<id>`; ahora se borran.

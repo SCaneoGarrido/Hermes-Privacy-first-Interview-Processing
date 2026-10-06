@@ -6,6 +6,7 @@ import type {
   Interview,
   InterviewDetail,
   ProcessInterviewResponse,
+  TranscriptBlock,
   TranscriptDocument,
   UpdateKeywordsResponse,
   UploadAudioResponse,
@@ -74,6 +75,17 @@ export function processInterview(id: number, includeSummary: boolean = false, en
 
 export function getTranscript(id: number) {
   return apiClient.get<TranscriptDocument>(`/interview/${id}/transcript`);
+}
+
+// PUT /interview/:id/transcript -- guarda la version editada (la original
+// del pipeline se conserva). Devuelve el documento actualizado.
+export function updateTranscript(id: number, blocks: TranscriptBlock[]) {
+  return apiClient.put<TranscriptDocument>(`/interview/${id}/transcript`, { blocks });
+}
+
+// DELETE /interview/:id/transcript/edits -- descarta las ediciones.
+export function restoreTranscript(id: number) {
+  return apiClient.del<TranscriptDocument>(`/interview/${id}/transcript/edits`);
 }
 
 export function deleteInterview(id: number) {

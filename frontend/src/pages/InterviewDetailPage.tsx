@@ -48,6 +48,7 @@ export function InterviewDetailPage() {
 
   const [processError, setProcessError] = useState<unknown>(null);
   const [processing, setProcessing] = useState(false);
+  const [confirmReprocess, setConfirmReprocess] = useState(false);
   const [includeSummary, setIncludeSummary] = useState(false);
   const [enhanceTranscript, setEnhanceTranscript] = useState(false);
 
@@ -127,7 +128,18 @@ export function InterviewDetailPage() {
     }
   }
 
+  // Reprocesar reemplaza la transcripcion: si tiene ediciones manuales, se
+  // pide confirmacion antes de descartarlas.
+  function requestProcess() {
+    if (detail?.transcript_edited) {
+      setConfirmReprocess(true);
+      return;
+    }
+    handleProcess();
+  }
+
   async function handleProcess() {
+    setConfirmReprocess(false);
     setProcessError(null);
     setProcessing(true);
     try {
@@ -290,9 +302,9 @@ export function InterviewDetailPage() {
                     Corregir y anonimizar con IA <span className="tag">Experimental</span>
                   </span>
                   <span className="option-hint">
-                    Etiqueta hablantes y reemplaza nombres por marcadores. Todavía puede reemplazar términos comunes
-                    (ej. "paciente") y omitir nombres. Sin esta opción la transcripción sale tal cual la produce
-                    whisper, <strong>sin anonimizar</strong>.
+                    Corrige ortografía y puntuación turno por turno y reemplaza nombres por marcadores (los hablantes
+                    no cambian). Todavía puede reemplazar términos comunes (ej. "paciente") y omitir nombres. Sin esta
+                    opción la transcripción sale tal cual la produce whisper, <strong>sin anonimizar</strong>.
                   </span>
                 </span>
               </label>
@@ -314,14 +326,14 @@ export function InterviewDetailPage() {
             </div>
 
             <p className="muted expectation">
-              <ClockIcon size={16} /> Todo corre en la CPU de este equipo: una entrevista de una hora puede tardar 20
-              minutos o más.
+              <ClockIcon size={16} /> Todo corre en este equipo: una entrevista de una hora puede tardar unos 25
+              minutos con GPU, y bastante más solo con CPU.
             </p>
 
             <button
               type="button"
               className="btn btn-primary"
-              onClick={handleProcess}
+              onClick={requestProcess}
               disabled={processing || !detail.audio}
             >
               <PlayIcon />
@@ -349,6 +361,18 @@ export function InterviewDetailPage() {
           busyLabel="Subiendo…"
           onConfirm={uploadFile}
           onCancel={() => setConfirmReplace(false)}
+        />
+      )}
+
+      {confirmReprocess && (
+        <ConfirmDialog
+          title="¿Volver a procesar?"
+          message="La transcripción tiene ediciones manuales. Al volver a procesar se genera una transcripción nueva y esas ediciones se descartan."
+          confirmLabel="Procesar y descartar ediciones"
+          busy={processing}
+          busyLabel="Enviando…"
+          onConfirm={handleProcess}
+          onCancel={() => setConfirmReprocess(false)}
         />
       )}
 
@@ -398,8 +422,8 @@ function ProcessingView({ detail, elapsedSeconds }: { detail: InterviewDetail; e
               <h2 className="section-title">Mientras tanto</h2>
             </div>
             <p className="guide-text">
-              Una entrevista de una hora suele tardar <strong>20 minutos o más</strong>, sobre todo durante la
-              transcripción. Que un paso demore no significa que el proceso esté trabado.
+              Una entrevista de una hora suele tardar <strong>25 minutos o más</strong>, sobre todo durante la
+              transcripción y la identificación de hablantes. Que un paso demore no significa que el proceso esté trabado.
             </p>
             <div className="inset-note">
               <strong>Podés cerrar esta pestaña</strong>

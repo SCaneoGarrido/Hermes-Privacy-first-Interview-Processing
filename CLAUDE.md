@@ -8,8 +8,12 @@ y resumen opcional. Sin cloud, sin APIs externas. Ver `README.md` para el detall
 
 Backend (C++20, requiere `VCPKG_ROOT` y MinGW-w64 en el `PATH`):
 ```
-cmake --build backend/build --target backend -j4
+cmake --build backend/build-vulkan --target backend -j4
 ```
+El MinGW del proyecto (`E:/Desarrollo/Tools/mingw64/bin`) tiene que ir **primero** en el `PATH`,
+tanto al compilar dependencias de vcpkg como al correr `backend.exe` (otro MinGW antes en el
+`PATH` deja ggml-vulkan sin shaders y carga un `libstdc++` incompatible; ver ADR-020).
+Correr el backend desde `backend/` (rutas relativas a `./models`, `./sherpa-onnx`, `./storage`).
 Frontend:
 ```
 cd frontend && npm run dev       # dev server (Vite)

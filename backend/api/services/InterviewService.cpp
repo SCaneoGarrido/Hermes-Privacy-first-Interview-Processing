@@ -2,11 +2,11 @@
 #include "../include/logger.h"
 #include "../include/Constanst.h"
 #include "../include/services/TranscriptDocumentBuilder.h"
-
-#include <nlohmann/json.hpp>
+#include "../../transcript/include/TranscriptRenderer.h"
 
 #include <algorithm>
 #include <cctype>
+#include <cmath>
 #include <set>
 
 #include <filesystem>
@@ -16,6 +16,16 @@
 
 namespace {
 
+using hermes::transcript::SpeakerLabels;
+using hermes::transcript::SpeakerSource;
+using hermes::transcript::StructuredTranscript;
+using hermes::transcript::TranscriptTurn;
+
+// Limites de una transcripcion editada: una entrevista de 2h tiene del orden
+// de 3000 segmentos; esto deja margen amplio sin aceptar cualquier cosa.
+constexpr size_t MAX_EDIT_BLOCKS = 20000;
+constexpr size_t MAX_EDIT_BLOCK_CHARS = 20000;
+
 std::optional<std::string> readTextFile(const std::string& path) {
     std::ifstream file(path, std::ios::binary);
     if (!file.is_open()) return std::nullopt;
@@ -24,31 +34,32 @@ std::optional<std::string> readTextFile(const std::string& path) {
     return buffer.str();
 }
 
-// Inicios de segmento de transcript_raw.json (escrito por el job junto a
-// transcript_final.txt). Vacio si no existe o no se puede leer: la vista
-// funciona igual, solo sin marcas de tiempo.
-std::vector<double> readSegmentStarts(const std::filesystem::path& rawJsonPath) {
-    std::vector<double> starts;
-    std::ifstream file(rawJsonPath);
-    if (!file.is_open()) return starts;
-    try {
-        const auto json = nlohmann::json::parse(file);
-        for (const auto& segment : json) {
-            starts.push_back(segment.at("start").get<double>());
-        }
-    } catch (const std::exception& e) {
-        log_event(std::string("[InterviewService][readSegmentStarts] No se pudo leer ") + rawJsonPath.string() + ": " + e.what());
-        starts.clear();
-    }
-    return starts;
+std::string trim(const std::string& value) {
+    const auto first = value.find_first_not_of(" \t\r\n");
+    if (first == std::string::npos) return "";
+    const auto last = value.find_last_not_of(" \t\r\n");
+    return value.substr(first, last - first + 1);
+}
+
+std::vector<TranscriptSpeaker> speakerList(const SpeakerLabels& labels) {
+    return {
+        {std::string(hermes::transcript::speakerRoleKey(hermes::transcript::SpeakerRole::Interviewer)), labels.interviewer},
+        {std::string(hermes::transcript::speakerRoleKey(hermes::transcript::SpeakerRole::Subject)), labels.subject},
+    };
+}
+
+std::optional<int64_t> toMs(const std::optional<double>& seconds) {
+    if (!seconds) return std::nullopt;
+    return static_cast<int64_t>(std::llround(*seconds * 1000.0));
 }
 
 }  // namespace
 
 InterviewService::InterviewService(IInterviewRepository& repository,
                                     hermes::jobs::IInterviewJobRepository& jobRepository,
-                                    hermes::jobs::IJobQueue& jobQueue)
-    : m_repository(repository), m_jobRepository(jobRepository), m_jobQueue(jobQueue) {}
+                                    hermes::jobs::IJobQueue& jobQueue,
+                                    hermes::transcript::ITranscriptStore& transcriptStore)
+    : m_repository(repository), m_jobRepository(jobRepository), m_jobQueue(jobQueue), m_transcriptStore(transcriptStore) {}
 
 std::optional<int> InterviewService::createInterview(const std::string& date, const std::string& type, const std::string& subjectType) {
     return m_repository.create(date, type, subjectType);
@@ -72,6 +83,7 @@ std::optional<InterviewDetailRecord> InterviewService::getInterviewDetail(int id
     detail.executionTimeSeconds = m_jobRepository.findLatestExecutionTimeSeconds(id);
     detail.currentStep = m_jobRepository.findCurrentStep(id);
     detail.keywords = m_repository.findKeywordsByInterviewId(id);
+    detail.transcriptEdited = m_transcriptStore.hasEdits(id);
     return detail;
 }
 
@@ -260,27 +272,162 @@ void InterviewService::removeProcessingOutputs(int interviewId) {
     }
 }
 
-TranscriptDocumentOutcome InterviewService::getTranscriptDocument(int interviewId) {
+TranscriptDocumentOutcome InterviewService::buildDocument(int interviewId, const InterviewRecord& interview) {
     using Status = TranscriptDocumentOutcome::Status;
-    if (!m_repository.existsById(interviewId)) {
-        return {Status::NotFound, {}};
-    }
     const auto transcriptionPath = m_repository.findTranscriptionPathByInterviewId(interviewId);
     if (!transcriptionPath.has_value()) {
         return {Status::NotReady, {}};
     }
-    const auto text = readTextFile(*transcriptionPath);
-    if (!text.has_value()) {
-        log_event("[InterviewService][getTranscriptDocument] No se encontro el archivo " + *transcriptionPath +
-                  " (interview_id=" + std::to_string(interviewId) + ")");
-        return {Status::FileMissing, {}};
+
+    TranscriptDocument document;
+    if (auto loaded = m_transcriptStore.loadCurrent(interviewId)) {
+        document = TranscriptDocumentBuilder::build(loaded->transcript);
+        document.edited = loaded->edited;
+    } else {
+        // Entrevista procesada antes de la transcripcion estructurada (ADR-022).
+        const auto text = readTextFile(*transcriptionPath);
+        if (!text.has_value()) {
+            log_event("[InterviewService][buildDocument] No se encontro el archivo " + *transcriptionPath +
+                      " (interview_id=" + std::to_string(interviewId) + ")");
+            return {Status::FileMissing, {}};
+        }
+        document = TranscriptDocumentBuilder::buildLegacy(*text);
     }
 
-    const auto rawJsonPath = std::filesystem::path(*transcriptionPath).parent_path() / "transcript_raw.json";
-    TranscriptDocument document = TranscriptDocumentBuilder::build(*text, readSegmentStarts(rawJsonPath));
-
+    document.speakers = speakerList(hermes::transcript::makeSpeakerLabels(interview.subjectType));
     if (const auto summaryPath = m_repository.findSummaryPathByInterviewId(interviewId)) {
         document.summary = readTextFile(*summaryPath);
     }
     return {Status::Ok, std::move(document)};
+}
+
+TranscriptDocumentOutcome InterviewService::getTranscriptDocument(int interviewId) {
+    const auto interview = m_repository.findById(interviewId);
+    if (!interview.has_value()) {
+        return {TranscriptDocumentOutcome::Status::NotFound, {}};
+    }
+    return buildDocument(interviewId, *interview);
+}
+
+TranscriptTextOutcome InterviewService::renderTranscriptText(int interviewId) {
+    using Status = TranscriptTextOutcome::Status;
+    const auto interview = m_repository.findById(interviewId);
+    if (!interview.has_value()) {
+        return {Status::NotFound, ""};
+    }
+    const auto transcriptionPath = m_repository.findTranscriptionPathByInterviewId(interviewId);
+    if (!transcriptionPath.has_value()) {
+        return {Status::NotReady, ""};
+    }
+    if (auto loaded = m_transcriptStore.loadCurrent(interviewId)) {
+        return {Status::Ok, hermes::transcript::renderPlainText(loaded->transcript,
+                                                               hermes::transcript::makeSpeakerLabels(interview->subjectType))};
+    }
+    // Entrevista procesada antes de ADR-022: el archivo tal cual.
+    auto text = readTextFile(*transcriptionPath);
+    if (!text.has_value()) {
+        return {Status::FileMissing, ""};
+    }
+    return {Status::Ok, std::move(*text)};
+}
+
+TranscriptEditOutcome InterviewService::updateTranscript(int interviewId, const std::vector<TranscriptBlockInput>& blocks) {
+    using Status = TranscriptEditOutcome::Status;
+    const std::string idTag = " (interview_id=" + std::to_string(interviewId) + ")";
+    const auto interview = m_repository.findById(interviewId);
+    if (!interview.has_value()) {
+        return {Status::NotFound, "", {}};
+    }
+    if (interview->status == "processing" || m_jobRepository.hasActiveJob(interviewId)) {
+        return {Status::Busy, "", {}};
+    }
+    if (!m_repository.findTranscriptionPathByInterviewId(interviewId).has_value()) {
+        return {Status::NotReady, "", {}};
+    }
+    const auto current = m_transcriptStore.loadCurrent(interviewId);
+    if (!current.has_value()) {
+        return {Status::NotEditable, "", {}};
+    }
+
+    if (blocks.size() > MAX_EDIT_BLOCKS) {
+        return {Status::Invalid, "La transcripcion admite hasta " + std::to_string(MAX_EDIT_BLOCKS) + " bloques", {}};
+    }
+
+    StructuredTranscript edited;
+    edited.speakerSource = SpeakerSource::Manual;
+    // El aviso de no anonimizacion describe el contenido, no la edicion: se
+    // conserva para que quien descargue siga sabiendo que hay datos personales.
+    edited.notice = current->transcript.notice;
+    for (size_t i = 0; i < blocks.size(); ++i) {
+        const auto& block = blocks[i];
+        const std::string position = "El bloque " + std::to_string(i + 1);
+        const std::string text = trim(block.text);
+        if (text.empty()) continue;  // bloque vaciado en el editor: se descarta
+        if (text.size() > MAX_EDIT_BLOCK_CHARS) {
+            return {Status::Invalid, position + " supera los " + std::to_string(MAX_EDIT_BLOCK_CHARS) + " caracteres", {}};
+        }
+        const bool hasControlChar = std::any_of(text.begin(), text.end(), [](unsigned char c) {
+            return std::iscntrl(c) && c != '\n' && c != '\t';
+        });
+        if (hasControlChar) {
+            return {Status::Invalid, position + " contiene caracteres no permitidos", {}};
+        }
+
+        TranscriptTurn turn;
+        if (block.speaker && !block.speaker->empty()) {
+            turn.speaker = hermes::transcript::parseSpeakerRole(*block.speaker);
+            if (!turn.speaker) {
+                return {Status::Invalid, position + " tiene un hablante desconocido: '" + *block.speaker + "'", {}};
+            }
+        }
+        if ((block.startSeconds && *block.startSeconds < 0) || (block.endSeconds && *block.endSeconds < 0) ||
+            (block.startSeconds && block.endSeconds && *block.startSeconds > *block.endSeconds)) {
+            return {Status::Invalid, position + " tiene tiempos invalidos", {}};
+        }
+        turn.startMs = toMs(block.startSeconds);
+        turn.endMs = toMs(block.endSeconds);
+        turn.text = text;
+        edited.turns.push_back(std::move(turn));
+    }
+    if (edited.turns.empty()) {
+        return {Status::Invalid, "La transcripcion editada no puede quedar vacia", {}};
+    }
+
+    try {
+        m_transcriptStore.saveEdited(interviewId, edited);
+    } catch (const std::exception& e) {
+        log_event(std::string("[InterviewService][updateTranscript] No se pudo guardar la edicion") + idTag + ": " + e.what());
+        return {Status::Failed, "", {}};
+    }
+    log_event("[InterviewService][updateTranscript] Transcripcion editada guardada (" + std::to_string(edited.turns.size()) +
+              " bloques)" + idTag);
+
+    auto document = buildDocument(interviewId, *interview);
+    if (document.status != TranscriptDocumentOutcome::Status::Ok) {
+        return {Status::Failed, "", {}};
+    }
+    return {Status::Ok, "", std::move(document.document)};
+}
+
+TranscriptEditOutcome InterviewService::restoreTranscript(int interviewId) {
+    using Status = TranscriptEditOutcome::Status;
+    const auto interview = m_repository.findById(interviewId);
+    if (!interview.has_value()) {
+        return {Status::NotFound, "", {}};
+    }
+    if (interview->status == "processing" || m_jobRepository.hasActiveJob(interviewId)) {
+        return {Status::Busy, "", {}};
+    }
+    if (!m_transcriptStore.removeEdited(interviewId)) {
+        return {Status::Failed, "", {}};
+    }
+    auto document = buildDocument(interviewId, *interview);
+    switch (document.status) {
+        case TranscriptDocumentOutcome::Status::Ok:
+            return {Status::Ok, "", std::move(document.document)};
+        case TranscriptDocumentOutcome::Status::NotReady:
+            return {Status::NotReady, "", {}};
+        default:
+            return {Status::Failed, "", {}};
+    }
 }

@@ -2,22 +2,29 @@
 
 System prompts used by `TranscriptEnhancer` (`backend/llm/src/TranscriptEnhancer.cpp`) for the three Sprint 6 phases. Keep this file in sync with the source -- it's the actual prompt text, not a paraphrase, so future edits should be made in both places together.
 
-## Phase 1 -- Correction + speaker labeling (`correctAndStructure`)
+## Phase 1 -- Correction, per turn (`correctTurns`)
+
+Since ADR-022 the LLM no longer assigns speakers. Speakers come from acoustic diarization (ADR-021), and this phase only corrects spelling and punctuation, turn by turn.
 
 ```
 Sos un asistente que corrige transcripciones automaticas de entrevistas en espanol.
-Recibis fragmentos de audio transcripto (con errores de puntuacion y sin indicar quien habla).
-Tu tarea: 1) Corregir ortografia y puntuacion. 2) Etiquetar cada linea con 'Investigador:' o
-'Entrevistado:' segun el contexto gramatical y semantico (son dos personas alternando turnos de
-habla). No agregues ni quites contenido, no resumas, no agregues comentarios propios. Devolve
-unicamente las lineas corregidas y etiquetadas, una por linea, sin explicaciones adicionales.
+Recibis lineas numeradas con el formato '[n] (Hablante) texto'. Tu tarea: corregir solo
+ortografia y puntuacion de cada linea (incluidos signos de pregunta). No cambies palabras por
+sinonimos, no agregues ni quites contenido, no resumas, no unas ni dividas lineas y no agregues
+comentarios propios. Devolve exactamente una linea por cada linea recibida, con el formato
+'[n] texto corregido' (mismo numero, sin el hablante), sin explicaciones adicionales.
 ```
 
-User prompt per chunk includes the last ~3 corrected/labeled lines from the previous chunk (continuity context) before the new raw segment text.
+**User prompt.** Each chunk of 60 turns starts with `Ultimas lineas ya corregidas del fragmento anterior (solo contexto, no las devuelvas):` followed by the last 3 corrected lines. Then comes `Lineas a corregir:` and the indexed lines `[1] (Investigador) texto`, numbered from 1 within the chunk. The speaker shown is the role's display label: "Investigador" or the interview's `subject_type`.
 
-**Known issue (2026-10-02)**: on a real 49-min interview, ~3% of the raw segments (15 of 450) were missing from the corrected text and two paragraphs were duplicated. Almost all of them sit at chunk boundaries (first ~15 or last segment of a 60-segment block): the model re-emits the continuity lines and skips new content. This is one of the reasons this phase became opt-in (`enhance_transcript`, ADR-017).
+**Parsing.** The code matches the response by index, not by line position, and strips a leading `(Hablante)` if the model repeats it. A turn keeps its **original** text in any of these cases:
+- its index is missing from the response;
+- the correction is empty;
+- the length ratio of corrected to original falls outside 0.6-1.6. Turns shorter than 15 characters are exempt from the ratio check, but their correction must stay under 40 characters.
 
-**Known issue (2026-07-29)**: the model does not always respect the exact two labels requested -- variants like `Investigado:` and `Entrevistador:` have been observed in real interviews. Also, speaker attribution is not deterministic between runs of the same audio for short, ungrounded lines ("Bien.", "Muy bien."). See `hermes-vault-knowledge/08 AI/Ollama Integration Strategy.md`.
+This replaces the free-text output that lost ~3% of segments at chunk boundaries.
+
+**Fixed by ADR-022 (2026-10-05)**: the two known issues of the previous prompt (label variants such as `Investigado:`, and speaker attribution that changed between runs and inverted mid-interview) disappear because the model no longer emits labels. The ~3% content loss at chunk boundaries (2026-10-02) cannot happen anymore: missing lines fall back to the original. The new prompt has not yet been validated against a real interview.
 
 ## Phase 2a -- PII entity extraction (`anonymize`)
 
@@ -29,7 +36,7 @@ ORGANIZACION, OTRO. No repitas la misma entidad mas de una vez. Si no encontras 
 no devuelvas nada. No agregues explicaciones ni texto fuera del formato pedido.
 ```
 
-Run once per ~3000-char chunk of the corrected transcript; results are accumulated into a single substitution table for the whole interview (see the two-pass design in the vault note). Phase 2b (substitution) is deterministic string replacement, not an LLM call.
+Run once per ~3000-char chunk of the corrected turn texts (one turn per line, **without speaker labels**, so labels cannot be extracted as entities). Results are accumulated into a single substitution table for the whole interview (see the two-pass design in the vault note). Phase 2b (substitution) is deterministic string replacement applied to each turn's text, not an LLM call.
 
 **Known issue (2026-10-02)**: severe over-substitution on a real interview:
 - Common nouns were extracted as entities ("paciente" ~100 times, "médico", "compañera", "cáncer de próstata" as LUGAR), as were the speaker label `Investigador:` and public institutions (FONASA, GES, SIGGES, CESFAM, Superintendencia).
@@ -79,7 +86,13 @@ User message: `Glosario:\n- <termino>\n...\n\nFragmento:\n<segmentos, uno por li
 
   Accepted pairs are replaced only inside that block, as whole words (ADR-018).
 
-Related, not an LLM prompt: whisper receives the same glossary as `initial_prompt` (`Glosario: a, b, c.`, with `carry_initial_prompt`), truncated to 150 tokens.
+Related, not an LLM prompt: whisper receives the same glossary as `initial_prompt`. The prompt is carried on every 30 s window (`carry_initial_prompt`) with no rolling context from the previous window, and is truncated to 150 tokens including the style sentence. Since ADR-020 it is followed by a fixed style sentence:
+
+```
+Glosario: a, b, c. Transcripción fiel de una entrevista, con puntuación, tildes y signos de pregunta: ¿cómo funciona? Bien, se lo explico.
+```
+
+Without keywords, only the style sentence is sent. It prevents whisper from drifting into unpunctuated text: on interview 6 it lost punctuation from minute 18 onward when it was conditioned on the previous window. No leakage of this text into transcripts was observed (2026-10-05).
 
 ## Model
 

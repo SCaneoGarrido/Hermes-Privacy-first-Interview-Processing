@@ -94,7 +94,11 @@ MySQL (Docker Compose, libmariadb client)
 
 Speech Recognition
 
-whisper.cpp
+whisper.cpp (Vulkan GPU backend, ADR-020)
+
+Speaker Diarization
+
+sherpa-onnx C API, loaded at runtime (pyannote segmentation + CAM++ embeddings, ADR-021)
 
 LLM
 

@@ -16,6 +16,8 @@
 #include "jobs/include/WorkerPool.h"
 #include "audio/include/FfmpegAudioNormalizer.h"
 #include "transcription/include/WhisperTranscriber.h"
+#include "diarization/include/SherpaOnnxDiarizer.h"
+#include "transcript/include/FileTranscriptStore.h"
 #include "llm/include/OllamaClient.h"
 #include "llm/include/TranscriptEnhancer.h"
 #include "api/include/Constanst.h"
@@ -82,10 +84,15 @@ int main()
     // Architecture, Common Mistakes). Configurable por si alguna entrevista
     // puntual es en otro idioma.
     hermes::audio::FfmpegAudioNormalizer        audioNormalizer;
-    hermes::transcription::WhisperTranscriber   transcriber(
+    // WHISPER_USE_GPU: "auto" (default, GPU Vulkan si hay), "1" o "0" (ver ADR-020).
+    const std::string whisperGpu = env_or("WHISPER_USE_GPU", "auto");
+    hermes::transcription::WhisperTranscriber   transcriber({
         env_or("WHISPER_MODEL_PATH", std::string(Config::DEFAULT_WHISPER_MODEL_PATH)),
         env_or("WHISPER_LANGUAGE", "es"),
-        env_or("WHISPER_VAD_MODEL_PATH", std::string(Config::DEFAULT_WHISPER_VAD_MODEL_PATH)));
+        env_or("WHISPER_VAD_MODEL_PATH", std::string(Config::DEFAULT_WHISPER_VAD_MODEL_PATH)),
+        whisperGpu == "0" ? hermes::transcription::GpuMode::Off
+            : whisperGpu == "1" ? hermes::transcription::GpuMode::On
+            : hermes::transcription::GpuMode::Auto});
 
     // Sprint 6 - Ollama Integration: correccion+estructuracion,
     // anonimizacion y resumen sobre la transcripcion de Sprint 5. Sin
@@ -97,11 +104,24 @@ int main()
     hermes::llm::TranscriptEnhancer             transcriptEnhancer(ollamaClient);
     hermes::llm::GlossarySanitizer              glossarySanitizer(ollamaClient);
 
-    hermes::jobs::InterviewProcessingJobHandler jobHandler(interviewRepository, jobRepository, audioNormalizer, transcriber, glossarySanitizer, transcriptEnhancer);
+    // Diarizacion acustica (quien habla: investigador / sujeto, ADR-021).
+    // Igual que whisper, no carga nada aca: la DLL y los modelos se cargan
+    // en el primer uso, y si faltan el pipeline sigue sin hablantes.
+    hermes::diarization::SherpaOnnxDiarizer     diarizer({
+        env_or("DIARIZATION_LIB_DIR", std::string(Config::DEFAULT_DIARIZATION_LIB_DIR)),
+        env_or("DIARIZATION_SEGMENTATION_MODEL", std::string(Config::DEFAULT_DIARIZATION_SEGMENTATION_MODEL)),
+        env_or("DIARIZATION_EMBEDDING_MODEL", std::string(Config::DEFAULT_DIARIZATION_EMBEDDING_MODEL)),
+        std::stoi(env_or("DIARIZATION_NUM_SPEAKERS", "0"))});
+
+    // Transcripcion estructurada (pipeline + ediciones del usuario, ADR-022).
+    hermes::transcript::FileTranscriptStore     transcriptStore{std::string(Config::STORAGE_DIRECTORY)};
+
+    hermes::jobs::InterviewProcessingJobHandler jobHandler(interviewRepository, jobRepository, audioNormalizer, transcriber,
+                                                           diarizer, transcriptStore, glossarySanitizer, transcriptEnhancer);
     const int workerPoolSize = std::stoi(env_or("WORKER_POOL_SIZE", "1"));
     hermes::jobs::WorkerPool                    workerPool(jobQueue, jobHandler, jobRepository, workerPoolSize);
 
-    InterviewService             interviewService(interviewRepository, jobRepository, jobQueue);
+    InterviewService             interviewService(interviewRepository, jobRepository, jobQueue, transcriptStore);
     FileController               fileController(interviewService);
     InterviewController          interviewController(interviewService);
     // ==== Define route for service health check
@@ -146,6 +166,14 @@ int main()
 
     CROW_ROUTE(app, "/api/v1/interview/<int>/transcript").methods(crow::HTTPMethod::GET)([&interviewController](int id) {
         return interviewController.getTranscript(id);
+    });
+
+    CROW_ROUTE(app, "/api/v1/interview/<int>/transcript").methods(crow::HTTPMethod::PUT)([&interviewController](const crow::request& req, int id) {
+        return interviewController.updateTranscript(req, id);
+    });
+
+    CROW_ROUTE(app, "/api/v1/interview/<int>/transcript/edits").methods(crow::HTTPMethod::Delete)([&interviewController](int id) {
+        return interviewController.restoreTranscript(id);
     });
 
     CROW_ROUTE(app, "/api/v1/interview/<int>/download/transcript").methods(crow::HTTPMethod::GET)([&interviewController](int id) {

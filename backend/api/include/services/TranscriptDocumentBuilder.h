@@ -2,22 +2,25 @@
 #define TRANSCRIPT_DOCUMENT_BUILDER_H
 
 #include "TranscriptDocument.h"
+#include "../../../transcript/include/TranscriptModel.h"
 #include <string>
-#include <vector>
 
-// Convierte el texto final del pipeline (transcript_final.txt) en bloques de
-// lectura. Pura: no lee archivos ni depende de infraestructura, recibe el
-// texto y los inicios de segmento de whisper ya cargados.
-//
-// - Texto etiquetado por hablante ("Investigador: ..." / "Entrevistado: ...",
-//   ver TranscriptEnhancer): un bloque por turno; las lineas sin etiqueta se
-//   suman al turno anterior.
-// - Texto plano de whisper (una linea por segmento): parrafos de varias
-//   lineas. Si la cantidad de lineas coincide con la de segmentos, cada
-//   parrafo lleva el segundo donde empieza.
+// Convierte la transcripcion en bloques de lectura. Pura: no lee archivos ni
+// depende de infraestructura.
 class TranscriptDocumentBuilder {
     public:
-        static TranscriptDocument build(const std::string& transcriptText, const std::vector<double>& segmentStarts);
+        // Desde la transcripcion estructurada (ADR-022):
+        // - Con hablantes: un bloque por turno, uniendo fragmentos
+        //   consecutivos del mismo hablante.
+        // - Sin hablantes: parrafos de varios segmentos.
+        // Cada bloque lleva su inicio/fin si se conocen. speakers/edited/summary
+        // los completa el llamador.
+        static TranscriptDocument build(const hermes::transcript::StructuredTranscript& transcript);
+
+        // Entrevistas procesadas antes de ADR-022 (solo transcript_final.txt):
+        // texto etiquetado por el LLM ("Investigador: ..." / "Entrevistado: ...")
+        // o texto plano de whisper (una linea por segmento), sin tiempos.
+        static TranscriptDocument buildLegacy(const std::string& transcriptText);
 };
 
 #endif // TRANSCRIPT_DOCUMENT_BUILDER_H

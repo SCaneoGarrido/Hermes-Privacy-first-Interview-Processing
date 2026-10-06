@@ -5,6 +5,7 @@
 #include "TranscriptDocument.h"
 #include "../../../jobs/include/IInterviewJobRepository.h"
 #include "../../../jobs/include/IJobQueue.h"
+#include "../../../transcript/include/ITranscriptStore.h"
 #include <optional>
 #include <string>
 #include <vector>
@@ -25,6 +26,8 @@ struct InterviewDetailRecord {
     std::optional<std::string> currentStep;
     // Glosario de palabras clave (ADR-018); vacio si no se cargo.
     std::vector<std::string> keywords;
+    // La transcripcion tiene ediciones manuales (reprocesar las descarta).
+    bool transcriptEdited = false;
 };
 
 // AlreadyQueued: ya existe un job pending/running para esta entrevista
@@ -39,6 +42,30 @@ enum class AttachAudioOutcome { NotFound, Busy, Ok, Failed };
 // registra un resultado pero el archivo ya no esta en disco.
 struct TranscriptDocumentOutcome {
     enum class Status { NotFound, NotReady, FileMissing, Ok } status;
+    TranscriptDocument document;
+};
+
+// Texto plano de la transcripcion vigente (descarga .txt).
+struct TranscriptTextOutcome {
+    enum class Status { NotFound, NotReady, FileMissing, Ok } status;
+    std::string text;
+};
+
+// Un bloque tal como lo envia el editor de la vista de lectura.
+struct TranscriptBlockInput {
+    std::optional<std::string> speaker;  // "interviewer" | "subject" | vacio
+    std::optional<double> startSeconds;
+    std::optional<double> endSeconds;
+    std::string text;
+};
+
+// Resultado de guardar/restaurar ediciones. Busy: hay un procesamiento en
+// curso (reemplazaria la transcripcion). NotEditable: entrevista procesada
+// antes de la transcripcion estructurada (ADR-022), hay que reprocesarla.
+// Invalid: message explica que regla no se cumplio.
+struct TranscriptEditOutcome {
+    enum class Status { NotFound, NotReady, NotEditable, Busy, Invalid, Ok, Failed } status;
+    std::string message;
     TranscriptDocument document;
 };
 
@@ -59,7 +86,8 @@ class InterviewService {
     public:
         InterviewService(IInterviewRepository& repository,
                           hermes::jobs::IInterviewJobRepository& jobRepository,
-                          hermes::jobs::IJobQueue& jobQueue);
+                          hermes::jobs::IJobQueue& jobQueue,
+                          hermes::transcript::ITranscriptStore& transcriptStore);
 
         std::optional<int> createInterview(const std::string& date, const std::string& type, const std::string& subjectType);
         std::vector<InterviewRecord> listInterviews();
@@ -87,15 +115,27 @@ class InterviewService {
         // Transcripcion final estructurada para la vista de lectura (ver
         // TranscriptDocumentBuilder), con el resumen si existe.
         TranscriptDocumentOutcome getTranscriptDocument(int interviewId);
+        // Texto plano de la version vigente (editada si existe), con los
+        // nombres de hablante actuales ("Investigador", subject_type).
+        TranscriptTextOutcome renderTranscriptText(int interviewId);
+        // Guarda la version editada a mano por el usuario. La version del
+        // pipeline no se toca (queda para restaurar / trazabilidad).
+        TranscriptEditOutcome updateTranscript(int interviewId, const std::vector<TranscriptBlockInput>& blocks);
+        // Descarta las ediciones y vuelve a la version del pipeline.
+        TranscriptEditOutcome restoreTranscript(int interviewId);
 
     private:
         // Borra storage/interviews/<id> (transcripciones, resumen, audio
         // normalizado). Best-effort: si falla solo se loguea.
         void removeProcessingOutputs(int interviewId);
 
+        // Documento de la version vigente con nombres de hablante y resumen.
+        TranscriptDocumentOutcome buildDocument(int interviewId, const InterviewRecord& interview);
+
         IInterviewRepository& m_repository;
         hermes::jobs::IInterviewJobRepository& m_jobRepository;
         hermes::jobs::IJobQueue& m_jobQueue;
+        hermes::transcript::ITranscriptStore& m_transcriptStore;
 };
 
 #endif // INTERVIEW_SERVICE_H

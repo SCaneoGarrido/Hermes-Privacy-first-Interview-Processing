@@ -1,6 +1,8 @@
 #include "../include/InterviewProcessingJobHandler.h"
 #include "../../api/include/logger.h"
 #include "../../api/include/Constanst.h"
+#include "../../diarization/include/SpeakerAssigner.h"
+#include "../../transcript/include/TranscriptRenderer.h"
 
 #include <nlohmann/json.hpp>
 
@@ -11,6 +13,12 @@
 namespace hermes::jobs {
 
 namespace {
+
+using hermes::transcript::SpeakerLabels;
+using hermes::transcript::SpeakerSource;
+using hermes::transcript::StructuredTranscript;
+using hermes::transcript::TranscriptTurn;
+using hermes::transcription::TranscriptSegment;
 
 // Trim simple: whisper.cpp suele devolver los segmentos con un espacio
 // inicial (" Hola, gracias...") - ver el ejemplo en whisper.cpp Architecture.
@@ -23,13 +31,20 @@ std::string trim(const std::string& text) {
     return text.substr(first, last - first + 1);
 }
 
-void writeRawTranscriptJson(const std::vector<hermes::transcription::TranscriptSegment>& segments, const std::string& path) {
+// Salida cruda de whisper, sin tocar (trazabilidad): tiempos en ms y
+// palabras con su tiempo aproximado.
+void writeRawTranscriptJson(const std::vector<TranscriptSegment>& segments, const std::string& path) {
     nlohmann::json json = nlohmann::json::array();
     for (const auto& segment : segments) {
+        nlohmann::json words = nlohmann::json::array();
+        for (const auto& word : segment.words) {
+            words.push_back({{"start_ms", word.startMs}, {"end_ms", word.endMs}, {"text", word.text}});
+        }
         json.push_back({
-            {"start", segment.start},
-            {"end", segment.end},
+            {"start_ms", segment.startMs},
+            {"end_ms", segment.endMs},
             {"text", segment.text},
+            {"words", std::move(words)},
         });
     }
 
@@ -44,12 +59,28 @@ void writeRawTranscriptJson(const std::vector<hermes::transcription::TranscriptS
     out << json.dump(2, ' ', false, nlohmann::json::error_handler_t::replace);
 }
 
-// Encabezado de la transcripcion entregada cuando la anonimizacion no se
-// aplico: el archivo contiene datos personales y quien lo descargue tiene
-// que saberlo antes de compartirlo (privacidad, ver CLAUDE.md).
+// Salida cruda de la diarizacion (solo tiempos y numero de cluster, sin
+// texto): trazabilidad, y permite revisar la asignacion de hablantes sin
+// volver a diarizar. Best-effort: si no se puede escribir, solo se loguea.
+void writeDiarizationJson(const std::vector<hermes::diarization::SpeakerTurn>& turns, const std::string& path) {
+    nlohmann::json json = nlohmann::json::array();
+    for (const auto& turn : turns) {
+        json.push_back({{"start_ms", turn.startMs}, {"end_ms", turn.endMs}, {"speaker", turn.speakerId}});
+    }
+    std::ofstream out(path);
+    if (!out.is_open()) {
+        log_event("[InterviewProcessingJobHandler][writeDiarizationJson] No se pudo escribir " + path);
+        return;
+    }
+    out << json.dump(2);
+}
+
+// Aviso de la transcripcion entregada cuando la anonimizacion pedida no se
+// aplico: el texto contiene datos personales y quien lo lea o descargue
+// tiene que saberlo antes de compartirlo (privacidad, ver CLAUDE.md).
 std::string nonAnonymizedNotice(const std::string& reason) {
     return "[AVISO HERMES] Esta transcripcion NO fue anonimizada y puede contener datos personales. "
-           "Revisala antes de compartirla. Motivo: " + reason + "\n\n";
+           "Revisala antes de compartirla. Motivo: " + reason;
 }
 
 void writeTextFile(const std::string& path, const std::string& content) {
@@ -60,14 +91,15 @@ void writeTextFile(const std::string& path, const std::string& content) {
     out << content;
 }
 
-void writePlainTranscript(const std::vector<hermes::transcription::TranscriptSegment>& segments, const std::string& path) {
-    std::ofstream out(path);
-    if (!out.is_open()) {
-        throw std::runtime_error("No se pudo crear el archivo de transcripcion final: " + path);
-    }
+std::vector<TranscriptTurn> turnsWithoutSpeakers(const std::vector<TranscriptSegment>& segments) {
+    std::vector<TranscriptTurn> turns;
+    turns.reserve(segments.size());
     for (const auto& segment : segments) {
-        out << trim(segment.text) << "\n";
+        const std::string text = trim(segment.text);
+        if (text.empty()) continue;
+        turns.push_back({segment.startMs, segment.endMs, std::nullopt, text});
     }
+    return turns;
 }
 
 }  // namespace
@@ -76,12 +108,16 @@ InterviewProcessingJobHandler::InterviewProcessingJobHandler(IInterviewRepositor
                                                                IInterviewJobRepository& jobRepository,
                                                                hermes::audio::IAudioNormalizer& audioNormalizer,
                                                                hermes::transcription::ITranscriber& transcriber,
+                                                               hermes::diarization::IDiarizer& diarizer,
+                                                               hermes::transcript::ITranscriptStore& transcriptStore,
                                                                hermes::llm::GlossarySanitizer& glossarySanitizer,
                                                                hermes::llm::TranscriptEnhancer& transcriptEnhancer)
     : m_interviewRepository(interviewRepository),
       m_jobRepository(jobRepository),
       m_audioNormalizer(audioNormalizer),
       m_transcriber(transcriber),
+      m_diarizer(diarizer),
+      m_transcriptStore(transcriptStore),
       m_glossarySanitizer(glossarySanitizer),
       m_transcriptEnhancer(transcriptEnhancer) {}
 
@@ -119,16 +155,57 @@ void InterviewProcessingJobHandler::replaceVideoWithExtractedAudio(int interview
     log_event("[InterviewProcessingJobHandler][replaceVideoWithExtractedAudio] Video original reemplazado por su audio extraido" + idTag);
 }
 
+std::vector<TranscriptTurn> InterviewProcessingJobHandler::identifySpeakers(int interviewId,
+                                                                            const std::string& normalizedPath,
+                                                                            const std::vector<TranscriptSegment>& segments,
+                                                                            bool& diarized) {
+    const std::string idTag = " (interview_id=" + std::to_string(interviewId) + ")";
+    diarized = false;
+    if (!m_diarizer.isAvailable()) {
+        return turnsWithoutSpeakers(segments);
+    }
+
+    log_event("[InterviewProcessingJobHandler][identifySpeakers] Diarizando" + idTag);
+    m_jobRepository.updateCurrentStep(interviewId, "diarizando");
+    try {
+        const auto speakerTurns = m_diarizer.diarize(normalizedPath);
+        writeDiarizationJson(speakerTurns, (std::filesystem::path(normalizedPath).parent_path() / "diarization.json").string());
+        auto turns = hermes::diarization::assignSpeakers(segments, speakerTurns);
+        for (const auto& turn : turns) {
+            if (turn.speaker) {
+                diarized = true;
+                break;
+            }
+        }
+        log_event("[InterviewProcessingJobHandler][identifySpeakers] " + std::to_string(speakerTurns.size()) +
+                  " tramos de habla, " + std::to_string(turns.size()) + " fragmentos" + idTag);
+        return turns;
+    } catch (const std::exception& e) {
+        log_event("[InterviewProcessingJobHandler][identifySpeakers] La diarizacion fallo, se entrega sin hablantes" +
+                  idTag + ". Detalle: " + e.what());
+        return turnsWithoutSpeakers(segments);
+    }
+}
+
 void InterviewProcessingJobHandler::applyGlossary(int interviewId,
                                                   const std::vector<std::string>& keywords,
                                                   const std::filesystem::path& interviewDir,
-                                                  std::vector<hermes::transcription::TranscriptSegment>& segments) {
+                                                  std::vector<TranscriptTurn>& turns) {
     const std::string idTag = " (interview_id=" + std::to_string(interviewId) + ")";
     log_event("[InterviewProcessingJobHandler][applyGlossary] Aplicando " + std::to_string(keywords.size()) + " palabras clave" + idTag);
     m_jobRepository.updateCurrentStep(interviewId, "aplicando_glosario");
     try {
-        auto sanitized = m_glossarySanitizer.sanitize(segments, keywords);
-        segments = std::move(sanitized.segments);
+        // GlossarySanitizer trabaja linea por linea sobre el texto: cada
+        // turno es una linea, y el resultado vuelve al mismo turno.
+        std::vector<TranscriptSegment> lines;
+        lines.reserve(turns.size());
+        for (const auto& turn : turns) {
+            lines.push_back({turn.startMs.value_or(0), turn.endMs.value_or(0), turn.text, {}});
+        }
+        auto sanitized = m_glossarySanitizer.sanitize(lines, keywords);
+        for (size_t i = 0; i < turns.size() && i < sanitized.segments.size(); ++i) {
+            turns[i].text = std::move(sanitized.segments[i].text);
+        }
 
         // Para auditar falsos positivos: que se cambio y en que linea.
         std::string report;
@@ -145,19 +222,26 @@ void InterviewProcessingJobHandler::applyGlossary(int interviewId,
 }
 
 void InterviewProcessingJobHandler::execute(const Job& job) {
+    const std::string idTag = " (interview_id=" + std::to_string(job.interviewId) + ")";
     auto audio = m_interviewRepository.findAudioByInterviewId(job.interviewId);
     if (!audio.has_value()) {
         // No deberia pasar: InterviewService.requestProcessing ya valida
         // que haya audio antes de encolar. Se trata igual como fallo del
         // job (interview_jobs.status = failed) en vez de crashear el worker.
-        throw std::runtime_error("La entrevista no tiene audio asociado (interview_id=" + std::to_string(job.interviewId) + ")");
+        throw std::runtime_error("La entrevista no tiene audio asociado" + idTag);
     }
+    const auto interview = m_interviewRepository.findById(job.interviewId);
+    const SpeakerLabels labels = hermes::transcript::makeSpeakerLabels(interview ? interview->subjectType : "");
 
     const std::filesystem::path interviewDir =
         std::filesystem::path(std::string(Config::STORAGE_DIRECTORY)) / "interviews" / std::to_string(job.interviewId);
     std::filesystem::create_directories(interviewDir);
 
-    log_event("[InterviewProcessingJobHandler][execute] Normalizando audio, interview_id=" + std::to_string(job.interviewId));
+    // Reprocesar reemplaza la transcripcion: las ediciones manuales hechas
+    // sobre la version anterior ya no corresponden (la UI lo advierte antes).
+    m_transcriptStore.removeEdited(job.interviewId);
+
+    log_event("[InterviewProcessingJobHandler][execute] Normalizando audio" + idTag);
     m_jobRepository.updateCurrentStep(job.interviewId, "normalizando_audio");
     const std::string normalizedPath = (interviewDir / "audio.wav").string();
     m_audioNormalizer.normalize(audio->path, normalizedPath);
@@ -165,36 +249,43 @@ void InterviewProcessingJobHandler::execute(const Job& job) {
         replaceVideoWithExtractedAudio(job.interviewId, *audio, normalizedPath);
     }
 
-    log_event("[InterviewProcessingJobHandler][execute] Transcribiendo con whisper.cpp, interview_id=" + std::to_string(job.interviewId));
+    log_event("[InterviewProcessingJobHandler][execute] Transcribiendo con whisper.cpp" + idTag);
     m_jobRepository.updateCurrentStep(job.interviewId, "transcribiendo");
     hermes::transcription::TranscriptionOptions transcriptionOptions;
     transcriptionOptions.keywords = m_interviewRepository.findKeywordsByInterviewId(job.interviewId);
-    auto segments = m_transcriber.transcribe(normalizedPath, transcriptionOptions);
+    const auto segments = m_transcriber.transcribe(normalizedPath, transcriptionOptions);
 
     const std::string rawJsonPath = (interviewDir / "transcript_raw.json").string();
     writeRawTranscriptJson(segments, rawJsonPath);
     if (!m_jobRepository.saveRawTranscriptPath(job.interviewId, rawJsonPath)) {
-        log_event("[InterviewProcessingJobHandler][execute] No se pudo guardar raw_transcript_path, interview_id=" + std::to_string(job.interviewId));
+        log_event("[InterviewProcessingJobHandler][execute] No se pudo guardar raw_transcript_path" + idTag);
     }
+
+    StructuredTranscript transcript;
+    bool diarized = false;
+    transcript.turns = identifySpeakers(job.interviewId, normalizedPath, segments, diarized);
+    transcript.speakerSource = diarized ? SpeakerSource::Diarization : SpeakerSource::None;
 
     // transcript_raw.json (arriba) queda tal cual lo dio whisper; la
     // transcripcion entregada lleva el glosario aplicado.
     if (!transcriptionOptions.keywords.empty()) {
-        applyGlossary(job.interviewId, transcriptionOptions.keywords, interviewDir, segments);
+        applyGlossary(job.interviewId, transcriptionOptions.keywords, interviewDir, transcript.turns);
     }
 
-    // Linea de base (Sprint 5): transcripcion cruda concatenada, sin
-    // diarizar. Se guarda ANTES de intentar Ollama a proposito - si Ollama
-    // falla mas abajo, esto sigue siendo el resultado disponible.
+    // Linea de base: se guarda ANTES de intentar Ollama a proposito - si
+    // Ollama falla mas abajo, esto sigue siendo el resultado disponible.
     const std::string finalTxtPath = (interviewDir / "transcript_final.txt").string();
-    writePlainTranscript(segments, finalTxtPath);
-    if (!m_interviewRepository.upsertTranscriptionResult(job.interviewId, finalTxtPath)) {
-        throw std::runtime_error("No se pudo guardar el resultado de transcripcion en interview_results (interview_id=" + std::to_string(job.interviewId) + ")");
-    }
+    auto saveDelivered = [&]() {
+        m_transcriptStore.savePipeline(job.interviewId, transcript);
+        writeTextFile(finalTxtPath, hermes::transcript::renderPlainText(transcript, labels));
+        if (!m_interviewRepository.upsertTranscriptionResult(job.interviewId, finalTxtPath)) {
+            throw std::runtime_error("No se pudo guardar el resultado de transcripcion en interview_results" + idTag);
+        }
+    };
+    saveDelivered();
 
     // Fases opcionales via Ollama (ver Job.h): sin ninguna pedida, la
-    // transcripcion plana de arriba es el resultado final y no se llama a
-    // Ollama en absoluto.
+    // transcripcion de arriba es el resultado final y no se llama a Ollama.
     if (!job.enhanceTranscript && !job.includeSummary) {
         return;
     }
@@ -205,26 +296,22 @@ void InterviewProcessingJobHandler::execute(const Job& job) {
     try {
         log_event("[InterviewProcessingJobHandler][execute] Ollama (correccion=" +
                    std::string(job.enhanceTranscript ? "si" : "no") + ", resumen=" +
-                   std::string(job.includeSummary ? "si" : "no") + "), interview_id=" + std::to_string(job.interviewId));
-        auto enhancement = m_transcriptEnhancer.enhance(segments, job.enhanceTranscript, job.includeSummary,
+                   std::string(job.includeSummary ? "si" : "no") + ")" + idTag);
+        auto enhancement = m_transcriptEnhancer.enhance(transcript, labels, job.enhanceTranscript, job.includeSummary,
             [this, &job](const std::string& step) {
                 m_jobRepository.updateCurrentStep(job.interviewId, step);
             });
 
         if (job.enhanceTranscript) {
-            // Resultado intermedio de la Fase 1, conservado aunque fallen las
-            // siguientes (antes una falla en la anonimizacion lo descartaba).
-            writeTextFile((interviewDir / "transcript_corrected.txt").string(), enhancement.correctedTranscript);
-
-            // Se pidio anonimizar: si fallo, el archivo entregado lo avisa.
-            if (enhancement.anonymizedTranscript.empty()) {
-                writeTextFile(finalTxtPath, nonAnonymizedNotice(enhancement.failure) + enhancement.correctedTranscript);
-            } else {
-                writeTextFile(finalTxtPath, enhancement.anonymizedTranscript);
+            // Resultado intermedio de la Fase 1, conservado para trazabilidad.
+            if (enhancement.corrected) {
+                writeTextFile((interviewDir / "transcript_corrected.txt").string(), enhancement.correctedTranscript);
             }
-            if (!m_interviewRepository.upsertTranscriptionResult(job.interviewId, finalTxtPath)) {
-                throw std::runtime_error("No se pudo actualizar interview_results con el resultado de Ollama");
+            // Se pidio anonimizar: si fallo, la transcripcion entregada lo avisa.
+            if (!enhancement.anonymized) {
+                transcript.notice = nonAnonymizedNotice(enhancement.failure);
             }
+            saveDelivered();
         }
 
         // El resumen es siempre un documento aparte de la transcripcion
@@ -239,22 +326,18 @@ void InterviewProcessingJobHandler::execute(const Job& job) {
         }
 
         if (enhancement.failure.empty()) {
-            log_event("[InterviewProcessingJobHandler][execute] Ollama OK, interview_id=" + std::to_string(job.interviewId));
+            log_event("[InterviewProcessingJobHandler][execute] Ollama OK" + idTag);
         } else {
-            log_event("[InterviewProcessingJobHandler][execute] Ollama completo parcialmente, interview_id=" +
-                       std::to_string(job.interviewId) + ". Fallo en " + enhancement.failure);
+            log_event("[InterviewProcessingJobHandler][execute] Ollama completo parcialmente" + idTag + ". Fallo en " + enhancement.failure);
         }
     } catch (const std::exception& e) {
-        log_event("[InterviewProcessingJobHandler][execute] Ollama fallo, se mantiene la transcripcion de whisper. interview_id=" +
-                   std::to_string(job.interviewId) + ". Detalle: " + e.what());
-        // Solo si se pidio anonimizar el archivo entregado tiene que avisar
-        // que no lo esta; si solo fallo el resumen, la transcripcion queda intacta.
+        log_event("[InterviewProcessingJobHandler][execute] Ollama fallo, se mantiene la transcripcion de whisper" + idTag +
+                   ". Detalle: " + e.what());
+        // Solo si se pidio anonimizar la transcripcion entregada tiene que
+        // avisar que no lo esta; si solo fallo el resumen, queda intacta.
         if (job.enhanceTranscript) {
-            std::string plain;
-            for (const auto& segment : segments) {
-                plain += trim(segment.text) + "\n";
-            }
-            writeTextFile(finalTxtPath, nonAnonymizedNotice(std::string("correccion: ") + e.what()) + plain);
+            transcript.notice = nonAnonymizedNotice(std::string("correccion: ") + e.what());
+            saveDelivered();
         }
     }
 }

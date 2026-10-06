@@ -145,10 +145,11 @@ Body opcional (sin body o sin un campo, ese campo vale `false`):
 { "include_summary": true, "enhance_transcript": true }
 ```
 
-- **Por defecto** (ambos `false`): la transcripción entregada es la salida plana de whisper, una línea por
-  segmento. No se llama a Ollama y **no está anonimizada** (ADR-017).
-- `enhance_transcript`: corrección + etiquetas de hablante + anonimización vía Ollama (experimental). Si se
-  pidió y la anonimización falla, el archivo empieza con un aviso `[AVISO HERMES]`.
+- **Por defecto** (ambos `false`): la transcripción entregada es la de whisper con los hablantes
+  identificados por diarización (`current_step = "diarizando"`, ADR-021). Esto último aplica si están
+  instalados sherpa-onnx y sus modelos. No se llama a Ollama y **no está anonimizada** (ADR-017).
+- `enhance_transcript`: corrección turno por turno + anonimización vía Ollama (experimental). No cambia
+  los hablantes. Si se pidió y la anonimización falla, la transcripción lleva un aviso `[AVISO HERMES]`.
 - `include_summary`: resumen como documento aparte (`GET /interview/:id/summary`). Se genera sobre el texto
   de whisper, o sobre el anonimizado si `enhance_transcript` está activo.
 
@@ -171,27 +172,68 @@ del `.txt` plano de `/download/transcript`.
 {
   "id": 3,
   "has_speakers": true,
-  "has_timestamps": false,
+  "has_timestamps": true,
+  "speaker_source": "diarization",
+  "edited": false,
   "notice": null,
   "summary": "texto del resumen o null",
+  "speakers": [
+    { "key": "interviewer", "label": "Investigador" },
+    { "key": "subject", "label": "Monitor GES" }
+  ],
   "blocks": [
-    { "speaker": "Investigador", "start": null, "text": "..." },
-    { "speaker": "Entrevistado", "start": null, "text": "..." }
+    { "speaker": "interviewer", "start": 2.88, "end": 14.86, "text": "..." },
+    { "speaker": "subject", "start": 16.53, "end": 75.51, "text": "..." }
   ]
 }
 ```
 
-- Texto etiquetado por hablante (con "Corregir y anonimizar"): un bloque por
-  turno; turnos consecutivos del mismo hablante se unen.
-- Texto plano de whisper: párrafos de 4–9 líneas. `start` (segundos) solo si
-  las líneas de `transcript_final.txt` coinciden 1:1 con los segmentos de
-  `transcript_raw.json`.
-- `notice`: el aviso `[AVISO HERMES] ...` que el pipeline antepone cuando la
-  anonimización pedida falló, separado del texto.
+- `speaker` es la **clave del rol** (`interviewer` / `subject` / `null`). El
+  nombre visible está en `speakers`: "Investigador" y el `subject_type` de la
+  entrevista (ADR-022). `speakers` siempre trae ambos roles.
+- `speaker_source`:
+  - `diarization`: identificados por el audio (ADR-021);
+  - `manual`: versión editada por el usuario;
+  - `llm`: etiquetas de IA sobre texto, solo en entrevistas procesadas antes de ADR-022;
+  - `none`: sin hablantes.
+- Bloques:
+  - con hablantes, un bloque por turno, uniendo fragmentos consecutivos del mismo hablante (en la versión editada, un bloque por turno tal como se guardó);
+  - sin hablantes, párrafos de 4–9 segmentos;
+  - `start`/`end` en segundos, `null` si no se conocen.
+- `edited`: hay una versión editada vigente (la original se puede restaurar).
+- `notice`: el aviso `[AVISO HERMES] ...` cuando la anonimización pedida
+  falló, separado del texto.
 
 Errores: `404 NOT_FOUND` (entrevista inexistente), `409 TRANSCRIPTION_NOT_READY`
 (sin resultado), `410 TRANSCRIPTION_FILE_MISSING` (la BD registra un resultado
 pero el archivo ya no está en disco).
+
+### `PUT /api/v1/interview/:id/transcript` — guardar la versión editada
+`InterviewController::updateTranscript`, vía `InterviewService::updateTranscript`.
+
+Body:
+```json
+{ "blocks": [ { "speaker": "interviewer", "start": 2.88, "end": 14.86, "text": "..." } ] }
+```
+`speaker` puede ser `null` (sin asignar); `start`/`end` pueden ser `null`.
+
+- **Guardado:** se guarda en `transcript_edited.json`. La versión del pipeline no se toca.
+- **Bloques:** los bloques vacíos se descartan.
+- **Aviso:** se conserva el `notice` vigente.
+- **Respuesta:** `200` con el mismo payload que el `GET`.
+- **Errores:**
+  - `400 VALIDATION_ERROR`: body sin `blocks`, bloque sin `text`, hablante desconocido, más de 20 000 bloques, más de 20 000 caracteres en un bloque, caracteres de control, tiempos negativos o `start > end`, o transcripción vacía;
+  - `404 NOT_FOUND`;
+  - `409 TRANSCRIPTION_NOT_READY`;
+  - `409 INTERVIEW_BUSY`: hay un procesamiento en curso;
+  - `409 TRANSCRIPTION_NOT_EDITABLE`: entrevista procesada antes de ADR-022, hay que reprocesarla.
+
+### `DELETE /api/v1/interview/:id/transcript/edits` — restaurar el original
+Descarta `transcript_edited.json`. Responde `200` con el documento original.
+Errores: `404`, `409 INTERVIEW_BUSY`, `409 TRANSCRIPTION_NOT_READY`.
+
+`GET /api/v1/interview/:id` incluye `"transcript_edited": true|false`.
+Reprocesar la entrevista descarta las ediciones.
 
 ### `DELETE /api/v1/interview/:id`
 `InterviewController::deleteInterview`, vía `InterviewService::removeInterview`:

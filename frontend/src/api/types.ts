@@ -33,6 +33,7 @@ export interface InterviewResult {
 export type ProcessingStep =
   | "normalizando_audio"
   | "transcribiendo"
+  | "diarizando"
   | "aplicando_glosario"
   | "corrigiendo_texto"
   | "anonimizando"
@@ -44,6 +45,8 @@ export interface InterviewDetail extends Interview {
   execution_time_seconds: number | null;
   current_step: ProcessingStep | null;
   keywords: string[];
+  // La transcripcion tiene ediciones manuales (reprocesar las descarta).
+  transcript_edited: boolean;
 }
 
 export interface UpdateKeywordsResponse {
@@ -80,19 +83,35 @@ export interface DeleteInterviewResponse {
   code: string;
 }
 
-// GET /interview/:id/transcript -- transcripcion estructurada para leer en
-// la app (ver TranscriptDocumentBuilder en el backend).
+// GET/PUT /interview/:id/transcript -- transcripcion estructurada para leer
+// y editar en la app (ver TranscriptDocumentBuilder en el backend).
+export type SpeakerKey = "interviewer" | "subject";
+
+export interface TranscriptSpeaker {
+  key: SpeakerKey;
+  label: string; // "Investigador" / tipo de sujeto de la entrevista
+}
+
 export interface TranscriptBlock {
-  speaker: string | null;
-  start: number | null; // segundo del audio; solo en texto plano de whisper
+  speaker: SpeakerKey | null;
+  start: number | null; // segundos del audio, si se conocen
+  end: number | null;
   text: string;
 }
+
+// diarization: hablantes identificados por el audio. manual: editada por el
+// usuario. llm: etiquetas puestas por IA sobre el texto (procesamientos
+// anteriores). none: sin hablantes.
+export type SpeakerSource = "diarization" | "manual" | "llm" | "none";
 
 export interface TranscriptDocument {
   id: number;
   has_speakers: boolean;
   has_timestamps: boolean;
+  speaker_source: SpeakerSource;
+  edited: boolean; // hay una version original del pipeline para restaurar
   notice: string | null; // aviso del pipeline si la anonimizacion pedida fallo
   summary: string | null;
+  speakers: TranscriptSpeaker[];
   blocks: TranscriptBlock[];
 }

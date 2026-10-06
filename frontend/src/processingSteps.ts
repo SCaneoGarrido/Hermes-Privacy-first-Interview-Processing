@@ -1,12 +1,13 @@
 import type { ProcessingStep } from "./api/types";
 
 // Orden real de los pasos en InterviewProcessingJobHandler/TranscriptEnhancer.
-// Solo los dos primeros corren siempre: el glosario depende de que haya
-// palabras clave, y correccion/anonimizacion/resumen de lo que se pidio al
-// procesar.
+// Los tres primeros corren siempre (la diarizacion se saltea solo si faltan
+// sus modelos en el servidor): el glosario depende de que haya palabras
+// clave, y correccion/anonimizacion/resumen de lo que se pidio al procesar.
 export const STEP_ORDER: ProcessingStep[] = [
   "normalizando_audio",
   "transcribiendo",
+  "diarizando",
   "aplicando_glosario",
   "corrigiendo_texto",
   "anonimizando",
@@ -16,8 +17,9 @@ export const STEP_ORDER: ProcessingStep[] = [
 export const STEP_INFO: Record<ProcessingStep, { label: string; hint: string }> = {
   normalizando_audio: { label: "Normalizando audio", hint: "Mono, 16 kHz" },
   transcribiendo: { label: "Transcribiendo con IA", hint: "whisper.cpp · el paso más largo" },
+  diarizando: { label: "Identificando hablantes", hint: "Investigador y entrevistado, por la voz" },
   aplicando_glosario: { label: "Aplicando palabras clave", hint: "Glosario de la entrevista" },
-  corrigiendo_texto: { label: "Corrigiendo texto", hint: "Ortografía y turnos de habla" },
+  corrigiendo_texto: { label: "Corrigiendo texto", hint: "Ortografía y puntuación" },
   anonimizando: { label: "Anonimizando", hint: "Nombres, lugares y organizaciones" },
   generando_resumen: { label: "Generando resumen", hint: "Documento aparte" },
 };
@@ -74,6 +76,7 @@ export function buildStepViews(
     switch (step) {
       case "normalizando_audio":
       case "transcribiendo":
+      case "diarizando":
         return true;
       case "aplicando_glosario":
         return keywordCount > 0;

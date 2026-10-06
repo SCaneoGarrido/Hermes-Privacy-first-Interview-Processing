@@ -1755,16 +1755,156 @@ input[type="file"]::file-selector-button {
   font-size: 0.78rem;
 }
 
-.turn-investigador .turn-label {
+.turn-interviewer .turn-label {
   color: var(--gold);
 }
 
-.turn-entrevistado .turn-label {
+.turn-subject .turn-label {
   color: var(--accent-secondary);
 }
 
-.turn-investigador .turn-text {
+.turn-interviewer .turn-text {
   color: var(--text-muted);
+}
+
+.turn-time {
+  display: block;
+  margin-top: 0.15rem;
+  font-family: var(--font-mono);
+  font-weight: 500;
+  font-size: 0.72rem;
+  letter-spacing: 0;
+  color: var(--text-muted);
+}
+
+.doc-badge {
+  display: inline-block;
+  padding: 0.05em 0.5em;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--accent-secondary) 50%, transparent);
+  color: var(--accent-secondary);
+  font-size: 0.75rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* ---------- Editor de la transcripcion ---------- */
+
+.transcript-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.editor-bar {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem 1rem;
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.editor-hint {
+  flex: 1 1 260px;
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+.editor-bar-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.editor-blocks {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.editor-block {
+  padding: 0.6rem 0.75rem 0.75rem;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--bg);
+}
+
+.editor-block.turn-interviewer {
+  border-left-color: var(--gold);
+}
+
+.editor-block.turn-subject {
+  border-left-color: var(--accent-secondary);
+}
+
+.editor-block-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+  margin-bottom: 0.4rem;
+}
+
+.editor-speaker select {
+  min-height: 32px;
+  font-weight: 600;
+}
+
+.editor-time {
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
+.editor-block-actions {
+  margin-left: auto;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+}
+
+.editor-action {
+  min-height: 30px;
+  padding: 0.2rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  color: var(--text);
+  font-size: 0.78rem;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.editor-action:hover:not(:disabled) {
+  border-color: var(--border-strong);
+}
+
+.editor-action-danger:hover:not(:disabled) {
+  color: var(--danger);
+  border-color: color-mix(in srgb, var(--danger) 50%, transparent);
+}
+
+.editor-text {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  resize: vertical;
+  overflow: hidden;
+  font-family: var(--font-display);
+  font-size: 1.02rem;
+  line-height: 1.65;
 }
 
 .pii-marker {
@@ -1845,6 +1985,8 @@ mark {
   .app-header,
   .app-footer,
   .reader-toolbar,
+  .editor-bar,
+  .editor-block-actions,
   .meander {
     display: none !important;
   }

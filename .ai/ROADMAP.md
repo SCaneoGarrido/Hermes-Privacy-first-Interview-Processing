@@ -58,7 +58,7 @@ Status: Done, with known quality gaps
 
 `llm/` (cpp-httplib, ADR-015; `OllamaClient`, `TranscriptEnhancer`). Three phases over whisper's raw segments: correction + speaker labeling (chunked), anonymization (two-pass entity table for consistency), summary (map-reduce, opt-in via `include_summary`, off by default). Verified at real scale. Known issues, documented in `hermes-vault-knowledge/08 AI/Ollama Integration Strategy.md`: entity-extraction recall is incomplete (some public figures not anonymized); speaker attribution is not deterministic between runs of the same audio; the model sometimes emits label variants outside the two requested; whisper.cpp can hallucinate text in another language on unclear audio. None of this blocks using the transcript as plain text; all of it blocks trusting the output as a reliable diarization/anonymization without human review.
 
-**Open backlog (2026-07-29)**: prioritized fix plan in the same vault note. Items 1 (label normalization) and 2 (`temperature`/`seed` for determinism) implemented 2026-08-15. Still pending: language/alphabet validation, entity recall (the most important -- blocks Sprint 7). GPU acceleration (Vulkan for whisper.cpp, GPU detection + advisory logging for Ollama) researched and planned in `hermes-vault-knowledge/08 AI/GPU Acceleration Strategy.md`, not yet implemented.
+**Open backlog (2026-07-29)**: prioritized fix plan in the same vault note. Items 1 (label normalization) and 2 (`temperature`/`seed` for determinism) implemented 2026-08-15. Still pending: language/alphabet validation, entity recall (the most important -- blocks Sprint 7). GPU acceleration for whisper.cpp (Vulkan) implemented 2026-10-05 (ADR-020); Ollama GPU detection/advisory logging still pending (`hermes-vault-knowledge/08 AI/GPU Acceleration Strategy.md`).
 
 **Unrelated bug found and fixed 2026-08-15 while testing the above**: downloaded transcripts showed mojibake accents (e.g. `Â¿QuÃ©` instead of `¿Qué`) when opened in some Windows text editors. Root cause was not the pipeline -- `transcript_final.txt` on disk and the HTTP response were both confirmed correct UTF-8 -- but the absence of a BOM, which makes editors without reliable UTF-8 auto-detection fall back to the system ANSI codepage. Fixed by prepending a UTF-8 BOM in `buildDownloadResponse` (`backend/api/controllers/interviewController.cpp`), download-response only, not in the stored file (so nothing that re-reads `transcript_final.txt` internally, e.g. future Export, is affected). Also found during the same session: a label variant (`Investervistado:`) at edit-distance 6 from both canonical labels (tied) -- deliberately left unfixed rather than guessing the speaker, documented as an open finding in `hermes-vault-knowledge/08 AI/Ollama Integration Strategy.md`.
 
@@ -80,6 +80,31 @@ Status: Done, with known quality gaps
 - Next:
   - Fix anonymization precision before recommending `enhance_transcript`.
   - Model/beam comparison.
+
+**Fidelity + speaker separation (2026-10-05)** — the two requirements for minimum usability.
+
+*Changes (ADR-020/021/022):*
+- whisper.cpp on GPU (Vulkan, RX 9060 XT) with `ggml-large-v3` and beam 5.
+- No rolling text context, plus a carried punctuated style prompt.
+- Density and known-phrase hallucination filters.
+- Acoustic diarization with sherpa-onnx (runtime-loaded DLL).
+- Speakers labelled "Investigador" and the interview's `subject_type`.
+- Structured transcript JSON and an edit mode in the reading view.
+
+*Verified on interview 6 (36 min, 4 runs).*
+- **Time:** about 13-17 min end to end.
+- **Wording:** large-v3 removes most of small's word errors.
+- **Punctuation:** present in every minute; before the style-prompt fix it was lost from minute 18.
+- **Roles:** clear-cut (questions 0.67 vs 0.04).
+- **Turns:** 41 of 41 interviewer turns longer than 1.5 s land in Investigador turns after sentence-level assignment (harness over the saved `diarization.json`).
+- **Editing API:** validation, restore, `409` while processing, and edits discarded on reprocess are all checked.
+
+*Pending:*
+- **Manual WER A/B.** Comparing large-v3, large-v3-turbo and small on hand-transcribed excerpts needs a listener; only model-vs-model differences were checked.
+- **Possible deletion by large-v3.** "…buena educación en CESFAM" became "…buena educación.". Check it against the audio.
+- **"GEG oncológico"** is still not corrected to GES (glossary).
+- **Diarization on other recordings** (phone audio, more than 2 speakers) has not been tested.
+- **Edit UI** was type-checked and built, but not exercised in a browser yet.
 
 ## Sprint 7 - Export
 

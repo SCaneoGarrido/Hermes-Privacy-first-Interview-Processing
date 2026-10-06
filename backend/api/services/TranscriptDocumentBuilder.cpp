@@ -6,15 +6,22 @@
 
 namespace {
 
-// Prefijo que InterviewProcessingJobHandler antepone cuando la
-// anonimizacion pedida no se pudo completar (nonAnonymizedNotice).
+using hermes::transcript::SpeakerSource;
+using hermes::transcript::StructuredTranscript;
+using hermes::transcript::TranscriptTurn;
+
+// Prefijo del aviso de no anonimizacion (InterviewProcessingJobHandler).
 constexpr std::string_view NOTICE_PREFIX = "[AVISO HERMES]";
 
-constexpr std::array<std::string_view, 2> SPEAKER_LABELS = {"Investigador", "Entrevistado"};
+// Etiquetas que escribia el LLM antes de ADR-022, con su rol equivalente.
+constexpr std::array<std::pair<std::string_view, std::string_view>, 2> LEGACY_SPEAKER_LABELS = {{
+    {"Investigador", "interviewer"},
+    {"Entrevistado", "subject"},
+}};
 
-// Un parrafo de texto plano corta despues de MIN lineas si la ultima cierra
-// una oracion, y siempre al llegar a MAX: bloques legibles sin depender de
-// que whisper haya puntuado bien.
+// Un parrafo de texto plano corta despues de MIN segmentos si el ultimo
+// cierra una oracion, y siempre al llegar a MAX: bloques legibles sin
+// depender de que whisper haya puntuado bien.
 constexpr size_t PARAGRAPH_MIN_LINES = 4;
 constexpr size_t PARAGRAPH_MAX_LINES = 9;
 
@@ -35,12 +42,12 @@ std::vector<std::string> splitLines(const std::string& text) {
     return lines;
 }
 
-// "Investigador: hola" -> {"Investigador", "hola"}; nullopt si la linea no
-// empieza con una etiqueta canonica.
-std::optional<std::pair<std::string, std::string>> splitSpeaker(const std::string& line) {
-    for (const auto label : SPEAKER_LABELS) {
+// "Investigador: hola" -> {"interviewer", "hola"}; nullopt si la linea no
+// empieza con una etiqueta conocida.
+std::optional<std::pair<std::string, std::string>> splitLegacySpeaker(const std::string& line) {
+    for (const auto& [label, key] : LEGACY_SPEAKER_LABELS) {
         if (line.size() > label.size() && line.compare(0, label.size(), label) == 0 && line[label.size()] == ':') {
-            return std::make_pair(std::string(label), trim(line.substr(label.size() + 1)));
+            return std::make_pair(std::string(key), trim(line.substr(label.size() + 1)));
         }
     }
     return std::nullopt;
@@ -58,9 +65,84 @@ void appendText(std::string& target, const std::string& addition) {
     target += addition;
 }
 
+std::optional<double> toSeconds(const std::optional<int64_t>& ms) {
+    if (!ms) return std::nullopt;
+    return static_cast<double>(*ms) / 1000.0;
+}
+
+std::optional<std::string> roleKey(const TranscriptTurn& turn) {
+    if (!turn.speaker) return std::nullopt;
+    return std::string(hermes::transcript::speakerRoleKey(*turn.speaker));
+}
+
 }  // namespace
 
-TranscriptDocument TranscriptDocumentBuilder::build(const std::string& transcriptText, const std::vector<double>& segmentStarts) {
+TranscriptDocument TranscriptDocumentBuilder::build(const StructuredTranscript& transcript) {
+    TranscriptDocument document;
+    document.notice = transcript.notice;
+    document.hasSpeakers = transcript.hasSpeakers();
+    document.speakerSource = std::string(hermes::transcript::speakerSourceKey(transcript.speakerSource));
+
+    bool anyTimestamp = false;
+    for (const auto& turn : transcript.turns) {
+        if (turn.startMs) {
+            anyTimestamp = true;
+            break;
+        }
+    }
+    document.hasTimestamps = anyTimestamp;
+
+    // Version editada a mano: cada turno es un bloque tal como lo dejo el
+    // usuario (si dividio un turno, no se vuelve a unir).
+    if (transcript.speakerSource == SpeakerSource::Manual) {
+        for (const auto& turn : transcript.turns) {
+            const std::string text = trim(turn.text);
+            if (text.empty()) continue;
+            document.blocks.push_back({roleKey(turn), toSeconds(turn.startMs), toSeconds(turn.endMs), text});
+        }
+        return document;
+    }
+
+    if (document.hasSpeakers) {
+        for (const auto& turn : transcript.turns) {
+            const std::string text = trim(turn.text);
+            if (text.empty()) continue;
+            const auto speaker = roleKey(turn);
+            if (!document.blocks.empty() && document.blocks.back().speaker == speaker) {
+                appendText(document.blocks.back().text, text);
+                if (turn.endMs) document.blocks.back().endSeconds = toSeconds(turn.endMs);
+                continue;
+            }
+            document.blocks.push_back({speaker, toSeconds(turn.startMs), toSeconds(turn.endMs), text});
+        }
+        return document;
+    }
+
+    TranscriptBlock current;
+    size_t linesInParagraph = 0;
+    for (const auto& turn : transcript.turns) {
+        const std::string text = trim(turn.text);
+        if (text.empty()) continue;
+        if (linesInParagraph == 0) {
+            current.startSeconds = toSeconds(turn.startMs);
+        }
+        if (turn.endMs) current.endSeconds = toSeconds(turn.endMs);
+        appendText(current.text, text);
+        ++linesInParagraph;
+
+        if ((linesInParagraph >= PARAGRAPH_MIN_LINES && endsSentence(text)) || linesInParagraph >= PARAGRAPH_MAX_LINES) {
+            document.blocks.push_back(std::move(current));
+            current = TranscriptBlock{};
+            linesInParagraph = 0;
+        }
+    }
+    if (linesInParagraph > 0) {
+        document.blocks.push_back(std::move(current));
+    }
+    return document;
+}
+
+TranscriptDocument TranscriptDocumentBuilder::buildLegacy(const std::string& transcriptText) {
     TranscriptDocument document;
 
     std::string body = transcriptText;
@@ -77,44 +159,34 @@ TranscriptDocument TranscriptDocumentBuilder::build(const std::string& transcrip
     for (const auto& line : lines) {
         if (line.empty()) continue;
         ++nonEmpty;
-        if (splitSpeaker(line)) ++labeled;
+        if (splitLegacySpeaker(line)) ++labeled;
     }
     document.hasSpeakers = nonEmpty > 0 && labeled * 2 >= nonEmpty;
 
     if (document.hasSpeakers) {
+        document.speakerSource = "llm";
         for (const auto& line : lines) {
             if (line.empty()) continue;
-            auto speaker = splitSpeaker(line);
+            auto speaker = splitLegacySpeaker(line);
             if (speaker && (document.blocks.empty() || document.blocks.back().speaker != speaker->first)) {
-                document.blocks.push_back({speaker->first, std::nullopt, speaker->second});
+                document.blocks.push_back({speaker->first, std::nullopt, std::nullopt, speaker->second});
             } else if (speaker) {
                 appendText(document.blocks.back().text, speaker->second);
             } else if (!document.blocks.empty()) {
                 appendText(document.blocks.back().text, line);
             } else {
-                document.blocks.push_back({std::nullopt, std::nullopt, line});
+                document.blocks.push_back({std::nullopt, std::nullopt, std::nullopt, line});
             }
         }
         return document;
     }
 
-    // Texto plano: writePlainTranscript escribe una linea por segmento (aun
-    // las vacias), asi que si las cantidades coinciden la linea i empieza en
-    // segmentStarts[i].
-    document.hasTimestamps = !segmentStarts.empty() && segmentStarts.size() == lines.size();
-
     TranscriptBlock current;
     size_t linesInParagraph = 0;
-    for (size_t i = 0; i < lines.size(); ++i) {
-        const std::string& line = lines[i];
+    for (const auto& line : lines) {
         if (line.empty()) continue;
-
-        if (linesInParagraph == 0 && document.hasTimestamps) {
-            current.startSeconds = segmentStarts[i];
-        }
         appendText(current.text, line);
         ++linesInParagraph;
-
         if ((linesInParagraph >= PARAGRAPH_MIN_LINES && endsSentence(line)) || linesInParagraph >= PARAGRAPH_MAX_LINES) {
             document.blocks.push_back(std::move(current));
             current = TranscriptBlock{};
@@ -124,6 +196,5 @@ TranscriptDocument TranscriptDocumentBuilder::build(const std::string& transcrip
     if (linesInParagraph > 0) {
         document.blocks.push_back(std::move(current));
     }
-
     return document;
 }

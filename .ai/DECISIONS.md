@@ -296,3 +296,152 @@ A plain `.txt` with one whisper segment per line is very hard to read for resear
 **This is not Sprint 7 - Export.** Export stays blocked on anonymization reliability. Because a well-formatted document looks "finished", every rendering carries a review warning on the cover: plain whisper output is flagged as not anonymized, and anonymized output as possibly incomplete.
 
 **Structuring in the backend.** The frontend is a pure API client; parsing speaker labels and pairing timestamps is backend logic.
+
+---
+
+## ADR-020
+
+GPU Acceleration (Vulkan) and Fidelity-First Whisper Defaults
+
+Decision
+
+whisper.cpp is built with the vcpkg `vulkan` feature (`whisper-cpp[vulkan]` -> `ggml[vulkan]`). At model load (`WhisperTranscriber::ensureModelLoaded`) the GPU is used when ggml reports a GPU device (`WHISPER_USE_GPU=auto`, default; `1` forces the attempt, `0` forces CPU). If the GPU load fails, it falls back to CPU. On GPU:
+- the default model is `ggml-large-v3` (`DEFAULT_WHISPER_MODEL_PATH`);
+- the main pass uses beam search (beam 5);
+- `flash_attn` is enabled (it stays off on CPU: that path crashed in this MinGW build).
+
+On every run:
+- `suppress_nst` drops non-speech tokens ("[Música]", "(risas)");
+- `token_timestamps` gives per-word times;
+- the Silero VAD is tuned: threshold 0.45, min speech 250 ms, min silence 400 ms, speech pad 200 ms, max speech 30 s;
+- a short list of known subtitle hallucinations ("amara.org", "gracias por ver el video") is dropped. A segment is only dropped when it is the whole text of a segment of 3 s or less;
+- segments with an impossible text density are dropped: more than 35 characters per second plus a 10-character margin;
+- each 30 s window is conditioned only on a fixed, carried prompt (glossary + a well-punctuated Spanish style sentence, `STYLE_PROMPT`), with **no rolling context from the previous window** (`MAIN_PASS_MAX_TEXT_CTX = 0`, previously 64).
+
+Segments now carry milliseconds and words (`TranscriptSegment{startMs,endMs,text,words}`) instead of truncated "HH:MM:SS" strings.
+
+Reason
+
+Transcription fidelity is one of the two requirements for Hermes to be minimally usable. The previous setup was `ggml-small` on CPU with greedy decoding. It was chosen only because medium and large are too slow on CPU, not on quality. The target machine has an AMD Radeon RX 9060 XT (16 GB).
+
+**Why Vulkan.** It is the only GPU backend available with this toolchain. CUDA is excluded for `windows & staticcrt` in the ggml port. Vulkan works on AMD, NVIDIA and Intel.
+
+**VRAM.** 16 GB fits large-v3 (~3-4 GB with caches) and Ollama 7B at the same time.
+
+**Kept from the CPU setup.** The loop-repair retry stays. large-v3 is known to loop more than small.
+
+**Validation on interview 6 (36 min, 2026-10-05).** large-v3 fixed most of small's word errors: "Ocriste"→"Existe", "pantologías"→"patologías", "octaculizan"→"obstaculizan", "GEES"→"GES", "fictéclica"→"ficha clínica". It also showed two failure modes:
+- **Duplicated question.** It emitted three copies of the previous question in 100-360 ms segments (01:49). The density filter catches exactly those 3 of 379 segments.
+- **Lost punctuation.** With the 64-token rolling context, one unpunctuated window at minute 18 left the rest of the interview without punctuation or capitals. small showed the same failure from minute 31. In whisper.cpp 1.8.6 with `carry_initial_prompt`, each window's prompt is the initial prompt plus the previous window's tokens, so the style of one window leaks into every following window.
+
+Setting the rolling context to 0 and carrying a punctuated style sentence restored punctuation in every minute, with the same word count (4988 vs 4984) and no prompt text leaking into the output. Total time on the RX 9060 XT is about 13-15 min for the 36-min interview (transcription about 8, diarization about 4, glossary about 1).
+
+**Decoding thresholds.** whisper's temperature fallback and entropy/logprob thresholds were already at OpenAI's defaults, so they are not where the gain is.
+
+**Word timestamps under VAD.** whisper.cpp 1.8.6 remaps segment times to the original audio under VAD, but not token times (`whisper_full_get_token_data` returns processed time). Word times are therefore projected linearly onto the remapped segment range: approximate, but enough to decide which side of a speaker change a word falls on (ADR-021).
+
+**Costs:**
+- `vulkan-loader` is a dynamic port, so `backend.exe` now needs `vulkan-1.dll`, which every modern GPU driver installs.
+- The first vcpkg build compiles shaderc/glslang (~15 min).
+- vcpkg's ggml build runs `glslc`, which is linked dynamically against MinGW's `libstdc++`. If another MinGW (Git's `/mingw64/bin`, msys64) comes first in `PATH`, `glslc` fails silently and ggml-vulkan ends up with empty shaders (undefined `*_data`/`*_len` symbols at link time). Put the project's MinGW first in `PATH` when building vcpkg dependencies.
+
+Model comparison (A/B on real interviews): see `.ai/ROADMAP.md`.
+
+---
+
+## ADR-021
+
+Acoustic Speaker Diarization with sherpa-onnx (Loaded at Runtime)
+
+Decision
+
+A new step `diarizando` runs after transcription, through a new interface `IDiarizer` (`backend/diarization/`). It identifies who speaks when from the audio itself. `SherpaOnnxDiarizer` uses sherpa-onnx v1.13.8 (official `win-x64-shared-MD-Release` build) with:
+- pyannote segmentation-3.0 (ONNX, MIT);
+- 3D-Speaker CAM++ embeddings (`3dspeaker_speech_campplus_sv_zh_en_16k-common_advanced.onnx`);
+- fast clustering **by distance threshold (0.7)**, not a fixed number of clusters (`DIARIZATION_NUM_SPEAKERS=0` by default; `N > 0` forces N).
+
+**Runtime loading.** The C API DLL (`sherpa-onnx-c-api.dll` + `onnxruntime.dll`, in `./sherpa-onnx`) is loaded with `LoadLibraryExW` + `GetProcAddress`, not linked. Only the C header is vendored (`backend/third_party/sherpa-onnx/`, Apache-2.0, same tag as the DLL).
+
+**Missing files.** If the DLL or a model is missing, `isAvailable()` is false. The pipeline logs how to install them and continues without speakers. The step never fails the job.
+
+**Aligning words with speakers.** `SpeakerAssigner` (pure) matches whisper's segments to the speaker turns:
+- a segment goes to the speaker covering ≥70% of it, unless the other speaker covers 2 s or more (whisper segments reach 30 s, and a short question inside a long answer is a real turn);
+- otherwise it is split word by word using each word's midpoint, and runs of fewer than 2 words are absorbed into the neighbour;
+- each split point is moved to the nearest sentence end (`.`, `?`, `!`) within 4 words. Without a nearby sentence end, a split 2 words or less from the segment edge is dropped. This absorbs the 1-4-word error of projected word times and diarization boundaries, which otherwise produced cuts such as "Apague la cámara por | subir la señal".
+- The raw speaker turns are written to `diarization.json` (times and cluster only, no text) for traceability.
+
+**Relevant clusters.** A cluster counts as a person when it has at least 3% of the total speech and at least 3 turns. Turns of the other (small) clusters are relabelled to the relevant cluster of the nearest turn in time, before aligning with the words. Small clusters are noise, laughter or backchannels.
+
+**Role decision.**
+- The interviewer is the relevant cluster with the highest share of questions (`¿`/`?`). On a tie (< 0.05) with the largest other cluster, it is the one who talks less; then the one who speaks first.
+- Every other relevant cluster goes to the role whose question share it resembles. In practice this is the subject, whose voice is often split into two or more clusters.
+- The interviewer is labelled "Investigador". The other role is labelled with the interview's own `subject_type` (e.g. "Monitor GES"), as requested by the user.
+- With fewer than 2 relevant clusters, the transcript is delivered without speakers rather than guessing.
+
+**Why a threshold instead of 2 clusters (2026-10-05, interview 7, 49 min).**
+- **Forcing 2 clusters on the whole recording** returned 2481 s vs 31 s. The subject's voice ended up in one group together with the interviewer's, and only stray fragments formed the other group, so the transcript came out without speakers.
+- **The first 10 minutes of the same audio** separated correctly with 2 clusters, so the failure is global clustering over a long recording, not the voices.
+- **With threshold 0.7**, the interviewer is one cluster (37 of 48 segments are questions) and the subject is split into two (02 and 05, present throughout).
+- **Interview 6 keeps working** under the same rule (interviewer question share 0.59 vs 0.05).
+- **Interview 9** (a 2-minute puppet sketch with acted voices and music) yields a single voice under every configuration and is delivered without speakers.
+- **Model choice.** wespeaker with 2 clusters failed the same way as campplus.
+
+Reason
+
+Speaker separation is the second requirement for minimum usability. Until now the only speaker labels came from the opt-in LLM pass, which guessed them from text and inverted speakers mid-interview (ADR-017). There is no audio signal in text.
+
+**Alternatives considered:**
+- *whisper.cpp tinydiarize:* rejected, it only works with an English `small.en-tdrz` model.
+- *onnxruntime from vcpkg built with MinGW:* rejected, not a supported configuration.
+- *pyannote in Python:* rejected, it would add a Python runtime to a C++ monolith.
+
+**Why runtime loading.** Loading the C API at runtime avoids mixing the MSVC-built release into the MinGW link. The backend also keeps starting without it. No C++ types cross the boundary: every buffer the DLL returns is freed with its own `Destroy*` function, because the two CRTs do not share a heap.
+
+**Spike (2026-10-05, interview 6, 36 min, CPU):**
+- campplus and wespeaker-resnet34 agreed on 367 of 369 segments; campplus was ~30% faster (220 s vs 325 s);
+- the questions fell on one cluster and the answers on the other.
+
+**Privacy.** Models and DLLs are manual downloads. Nothing touches the network at runtime.
+
+**Known limits.** Overlapping speech, very short backchannels ("ya", "mhm") and interviews with more than two people. The reading-view editor (ADR-022) is the correction path, including a one-click swap of the two roles.
+
+---
+
+## ADR-022
+
+Structured Transcript as Source of Truth, with Manual Editing
+
+Decision
+
+**Storage.** The delivered transcript is a JSON document per interview:
+- `storage/interviews/<id>/transcript_segments.json` holds `{version, speaker_source, notice, turns:[{start_ms,end_ms,speaker,text}]}`, behind `ITranscriptStore` / `FileTranscriptStore`, written atomically (tmp + rename);
+- `speaker` stores the **role key** (`interviewer` / `subject`), not a name. Display labels are resolved at read time ("Investigador" and `interviews.interview_subject_type`), so renaming the subject never requires reprocessing.
+
+**Derived outputs.** `transcript_final.txt` is rendered from the pipeline JSON (`renderPlainText`). The `.txt` download is rendered live from the current version, so it reflects edits and current labels.
+
+**Reading view.** `GET /interview/:id/transcript` returns blocks with role keys, start/end seconds, `speakers` (key→label), `speaker_source` and `edited`.
+
+**Editing:**
+- an "Editar" mode in the reading view edits text and speaker per turn, plus split / merge / delete and "swap both speakers";
+- edits are saved with `PUT /interview/:id/transcript` to `transcript_edited.json`. The pipeline file is never overwritten;
+- `DELETE /interview/:id/transcript/edits` restores the original;
+- edits are rejected while a job is active (409). Reprocessing deletes them, and the UI warns first (`transcript_edited` in the interview detail).
+
+**LLM correction.** The opt-in correction (`TranscriptEnhancer`) no longer labels speakers:
+- it receives indexed turns (`[n] (Hablante) texto`) and must return the same indexes;
+- a missing, garbled or implausibly changed line (length ratio outside 0.6-1.6) keeps its original text;
+- anonymization substitutes per turn, and entities are extracted from text without labels.
+
+Interviews processed before this change still render through the legacy `.txt` parser (`buildLegacy`), and they cannot be edited until reprocessed.
+
+Supersedes the speaker-labeling part of ADR-017 and the label parsing of ADR-019.
+
+Reason
+
+A diarized transcript needs a format that keeps the speaker and the times of every turn. Plain "Label: text" lines lose the times and tie the file to fixed label names. They are also what made the old reader drop timestamps entirely: `readSegmentStarts` parsed `"start":"00:00:02"` as a number and always threw.
+
+**Editing.** Even good diarization makes mistakes, and researchers need to fix both the attribution and whisper's text. The user asked for an in-place edit mode with persisted changes.
+
+**Two files.** Keeping the pipeline output and the edits separate keeps traceability and allows restoring the original.
+
+**Why the LLM stopped labeling speakers.** Labeling from text was the source of the inversions and of the ~3% content loss at chunk boundaries (ADR-017). Per-index correction with fallback to the original cannot lose turns.
