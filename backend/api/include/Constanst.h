@@ -72,6 +72,12 @@ namespace Config {
     // empezar a alucinar repeticiones. Opcional: sin el archivo, no hay VAD.
     inline constexpr std::string_view DEFAULT_WHISPER_VAD_MODEL_PATH = "./models/ggml-silero-v5.1.2.bin";
 
+    // Tope de bytes por respuesta parcial del audio (GET .../audio con Range,
+    // ADR-023). El navegador pide primero "bytes=0-" (todo el archivo, ~115MB
+    // por hora de WAV): sin tope se cargaria entero en memoria. Con respuestas
+    // cortas el navegador sigue pidiendo los tramos siguientes.
+    inline constexpr long long MAX_AUDIO_RANGE_BYTES = 2LL * 1024 * 1024;
+
     // Diarizacion acustica (sherpa-onnx, ver ADR-021). Todo opcional: sin
     // estos archivos se transcribe igual, sin identificar hablantes.
     // Carpeta con sherpa-onnx-c-api.dll + onnxruntime.dll (release v1.13.8).

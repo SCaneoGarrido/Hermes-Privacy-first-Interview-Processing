@@ -86,13 +86,15 @@ User message: `Glosario:\n- <termino>\n...\n\nFragmento:\n<segmentos, uno por li
 
   Accepted pairs are replaced only inside that block, as whole words (ADR-018).
 
-Related, not an LLM prompt: whisper receives the same glossary as `initial_prompt`. The prompt is carried on every 30 s window (`carry_initial_prompt`) with no rolling context from the previous window, and is truncated to 150 tokens including the style sentence. Since ADR-020 it is followed by a fixed style sentence:
+Related, not an LLM prompt: whisper receives the same glossary as `initial_prompt`, followed by a neutral punctuated dialogue line. It is carried on every 30 s window (`carry_initial_prompt`) with no rolling context, and truncated to 150 tokens including the style line:
 
 ```
-Glosario: a, b, c. Transcripción fiel de una entrevista, con puntuación, tildes y signos de pregunta: ¿cómo funciona? Bien, se lo explico.
+Glosario: a, b, c. ¿Y cómo lo hacen ustedes? Bueno, depende del caso, pero en general sí.
 ```
 
-Without keywords, only the style sentence is sent. It prevents whisper from drifting into unpunctuated text: on interview 6 it lost punctuation from minute 18 onward when it was conditioned on the previous window. No leakage of this text into transcripts was observed (2026-10-05).
+Without keywords, only the style line is sent. It keeps whisper's output punctuated (ADR-020). Segments that copy a contiguous part of the prompt are dropped, and any gap left behind is re-transcribed without a prompt.
+
+**Known issue, fixed 2026-10-06.** The previous style sentence was meta text: "Transcripción fiel de una entrevista, con puntuación, tildes y signos de pregunta: ¿cómo funciona? Bien, se lo explico." whisper copied it into the transcript on difficult audio (interviews 1, 2 and 10), and the word "Transcripción" primed subtitle-credit hallucinations.
 
 ## Model
 

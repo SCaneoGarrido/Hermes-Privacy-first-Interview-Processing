@@ -232,6 +232,22 @@ Body:
 Descarta `transcript_edited.json`. Responde `200` con el documento original.
 Errores: `404`, `409 INTERVIEW_BUSY`, `409 TRANSCRIPTION_NOT_READY`.
 
+### `GET /api/v1/interview/:id/audio` — audio para el reproductor
+`InterviewController::getAudio`, vía `InterviewService::readAudio` (ADR-023).
+
+Sirve el audio normalizado `storage/interviews/<id>/audio.wav` (WAV PCM 16 kHz mono), que es la referencia de tiempo de las marcas `start`/`end` de la transcripción. No pasa por el sobre `{success,data,error}` cuando hay audio: el cuerpo son los bytes del archivo.
+
+- **Sin encabezado `Range`:** `200` con el archivo completo (por streaming), `Accept-Ranges: bytes`.
+- **Con `Range: bytes=a-b`, `bytes=a-` o `bytes=-n`:**
+  - responde `206 Partial Content` con `Content-Range: bytes a-b/total`;
+  - cada respuesta trae como máximo 2 MB (`Config::MAX_AUDIO_RANGE_BYTES`), y el navegador pide el tramo siguiente;
+  - si hay varios rangos, solo se usa el primero.
+- **Encabezados:** `Content-Type: audio/wav`, `Cache-Control: no-store`.
+- **Errores:**
+  - `416` con `Content-Range: bytes */total` si el rango empieza después del final;
+  - `404 NOT_FOUND` si la entrevista no existe;
+  - `404 AUDIO_NOT_AVAILABLE` si todavía no se procesó (el WAV se genera al procesarla).
+
 `GET /api/v1/interview/:id` incluye `"transcript_edited": true|false`.
 Reprocesar la entrevista descarta las ediciones.
 

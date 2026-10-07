@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { SpeakerKey, TranscriptBlock, TranscriptDocument } from "../api/types";
+import { activeBlockRange, effectiveStarts, formatClock } from "../audioTimeline";
 import { ConfirmDialog } from "./ConfirmDialog";
 
 interface DraftBlock extends TranscriptBlock {
@@ -20,6 +21,11 @@ interface TranscriptEditorProps {
   onCancel: () => void;
   onRestore: () => void;
   onDirtyChange: (dirty: boolean) => void;
+  // Reproduccion sincronizada (ADR-023): tiempo actual del audio (null si no
+  // hay audio/tiempos), si hay que seguirlo, y saltar a un punto.
+  playbackTime: number | null;
+  followAudio: boolean;
+  onSeek: (seconds: number) => void;
 }
 
 let nextBlockId = 1;
@@ -30,15 +36,6 @@ function toDraft(blocks: TranscriptBlock[]): DraftBlock[] {
 
 function stripIds(blocks: DraftBlock[]): TranscriptBlock[] {
   return blocks.map(({ speaker, start, end, text }) => ({ speaker, start, end, text }));
-}
-
-// 754.3 -> "12:34" (o "1:02:03" pasada la hora)
-function formatClock(seconds: number): string {
-  const total = Math.floor(seconds);
-  const h = Math.floor(total / 3600);
-  const m = Math.floor((total % 3600) / 60);
-  const s = String(total % 60).padStart(2, "0");
-  return h > 0 ? `${h}:${String(m).padStart(2, "0")}:${s}` : `${m}:${s}`;
 }
 
 function autoGrow(textarea: HTMLTextAreaElement | null) {
@@ -52,10 +49,39 @@ function autoGrow(textarea: HTMLTextAreaElement | null) {
 // la entrevista (el arreglo de un clic cuando la asignacion automatica de
 // roles salio al reves). Guarda una version editada; la original del
 // pipeline se conserva en el servidor y se puede restaurar.
-export function TranscriptEditor({ transcript, saving, onSave, onCancel, onRestore, onDirtyChange }: TranscriptEditorProps) {
+export function TranscriptEditor({
+  transcript,
+  saving,
+  onSave,
+  onCancel,
+  onRestore,
+  onDirtyChange,
+  playbackTime,
+  followAudio,
+  onSeek,
+}: TranscriptEditorProps) {
   const [draft, setDraft] = useState<DraftBlock[]>(() => toDraft(transcript.blocks));
   const [confirm, setConfirm] = useState<PendingConfirm | null>(null);
   const textareas = useRef(new Map<number, HTMLTextAreaElement>());
+  const blockItems = useRef(new Map<number, HTMLLIElement>());
+
+  // Bloque que se esta escuchando, sobre el borrador (puede tener bloques
+  // divididos sin tiempo propio: heredan el del anterior).
+  const starts = useMemo(() => effectiveStarts(draft), [draft]);
+  const activeRange = useMemo(
+    () => (playbackTime == null ? { first: -1, last: -1 } : activeBlockRange(draft, playbackTime)),
+    [draft, playbackTime]
+  );
+  const activeId = activeRange.first >= 0 ? draft[activeRange.first]?.id : undefined;
+  const isActive = (index: number) => activeRange.first >= 0 && index >= activeRange.first && index <= activeRange.last;
+
+  // Seguir el audio, salvo mientras se escribe en un bloque: desplazar la
+  // pagina en ese momento le sacaria el texto de debajo del cursor.
+  useEffect(() => {
+    if (!followAudio || activeId === undefined) return;
+    if (document.activeElement instanceof HTMLTextAreaElement) return;
+    blockItems.current.get(activeId)?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  }, [activeId, followAudio]);
 
   const original = useMemo(() => JSON.stringify(transcript.blocks), [transcript.blocks]);
   const dirty = useMemo(() => JSON.stringify(stripIds(draft)) !== original, [draft, original]);
@@ -186,7 +212,16 @@ export function TranscriptEditor({ transcript, saving, onSave, onCancel, onResto
 
       <ol className="editor-blocks">
         {draft.map((block, index) => (
-          <li key={block.id} className={`editor-block${block.speaker ? ` turn-${block.speaker}` : ""}`}>
+          <li
+            key={block.id}
+            ref={(el) => {
+              if (el) blockItems.current.set(block.id, el);
+              else blockItems.current.delete(block.id);
+            }}
+            className={`editor-block${block.speaker ? ` turn-${block.speaker}` : ""}${
+              isActive(index) ? " editor-block-active" : ""
+            }`}
+          >
             <div className="editor-block-head">
               <label className="editor-speaker">
                 <span className="visually-hidden">Hablante del turno {index + 1}</span>
@@ -203,7 +238,20 @@ export function TranscriptEditor({ transcript, saving, onSave, onCancel, onResto
                   <option value="">Sin asignar</option>
                 </select>
               </label>
-              {block.start != null && <span className="editor-time">{formatClock(block.start)}</span>}
+              {block.start != null && (
+                <button
+                  type="button"
+                  className="editor-time turn-seek"
+                  onClick={() => {
+                    const start = starts[index];
+                    if (start != null) onSeek(start);
+                  }}
+                  disabled={playbackTime == null}
+                  title={playbackTime == null ? undefined : "Escuchar desde aquí"}
+                >
+                  {formatClock(block.start)}
+                </button>
+              )}
               <div className="editor-block-actions">
                 <button
                   type="button"

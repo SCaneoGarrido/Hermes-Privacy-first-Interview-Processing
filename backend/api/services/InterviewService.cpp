@@ -431,3 +431,70 @@ TranscriptEditOutcome InterviewService::restoreTranscript(int interviewId) {
             return {Status::Failed, "", {}};
     }
 }
+
+AudioOutcome InterviewService::readAudio(int interviewId, const std::optional<AudioByteRange>& range) {
+    AudioOutcome outcome;
+    if (!m_repository.existsById(interviewId)) {
+        outcome.status = AudioOutcome::Status::NotFound;
+        return outcome;
+    }
+
+    // El WAV normalizado (no el upload): es exactamente el audio contra el que
+    // se calcularon los tiempos, y el original puede no existir (un video se
+    // reemplaza por su audio, ADR-016). Existe desde que se proceso una vez.
+    const std::filesystem::path path = std::filesystem::path(std::string(Config::STORAGE_DIRECTORY)) / "interviews" /
+                                       std::to_string(interviewId) / "audio.wav";
+    std::error_code ec;
+    const auto size = std::filesystem::file_size(path, ec);
+    if (ec || size == 0) {
+        outcome.status = AudioOutcome::Status::NotAvailable;
+        return outcome;
+    }
+    outcome.path = path.string();
+    outcome.totalSize = static_cast<long long>(size);
+
+    if (!range) {
+        outcome.status = AudioOutcome::Status::Ok;
+        return outcome;
+    }
+
+    long long start;
+    long long end;
+    if (!range->start) {
+        // Sufijo: los ultimos N bytes.
+        const long long suffix = range->end.value_or(0);
+        if (suffix <= 0) {
+            outcome.status = AudioOutcome::Status::RangeNotSatisfiable;
+            return outcome;
+        }
+        start = std::max(0LL, outcome.totalSize - suffix);
+        end = outcome.totalSize - 1;
+    } else {
+        start = *range->start;
+        end = range->end.value_or(outcome.totalSize - 1);
+    }
+    if (start < 0 || start >= outcome.totalSize || end < start) {
+        outcome.status = AudioOutcome::Status::RangeNotSatisfiable;
+        return outcome;
+    }
+    end = std::min({end, outcome.totalSize - 1, start + Config::MAX_AUDIO_RANGE_BYTES - 1});
+
+    std::ifstream file(path, std::ios::binary);
+    if (!file.is_open()) {
+        outcome.status = AudioOutcome::Status::NotAvailable;
+        return outcome;
+    }
+    outcome.bytes.resize(static_cast<size_t>(end - start + 1));
+    file.seekg(start);
+    file.read(outcome.bytes.data(), static_cast<std::streamsize>(outcome.bytes.size()));
+    outcome.bytes.resize(static_cast<size_t>(file.gcount()));
+    if (outcome.bytes.empty()) {
+        outcome.status = AudioOutcome::Status::NotAvailable;
+        return outcome;
+    }
+    outcome.start = start;
+    outcome.end = start + static_cast<long long>(outcome.bytes.size()) - 1;
+    outcome.partial = true;
+    outcome.status = AudioOutcome::Status::Ok;
+    return outcome;
+}

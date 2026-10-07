@@ -24,35 +24,59 @@ constexpr int SAMPLE_RATE = 16000;
 constexpr int64_t SAMPLES_PER_CENTISECOND = SAMPLE_RATE / 100;
 
 // Tokens de texto previo (de la ventana anterior) con los que se condiciona
-// cada ventana de 30s en la pasada principal: ninguno. El texto previo es lo
-// que arrastra derivas hasta el final del audio:
-// - entrevista 13: "que no se cumplen los plazos" x114 durante 43:26-49:08
-//   (con el default de whisper.cpp, 224 tokens);
-// - entrevista 6 con large-v3: con 64 tokens, una ventana sin puntuar en el
-//   minuto 18 dejo sin puntuacion ni mayusculas el resto de la entrevista.
-// En su lugar cada ventana se condiciona solo con el prompt fijo (glosario +
-// STYLE_PROMPT, ver buildInitialPrompt), que siempre esta bien puntuado.
+// cada ventana de 30s en la pasada principal: ninguno. El texto previo
+// arrastra derivas: con el default (224) un bucle se autoalimento hasta el
+// final del audio (entrevista 13, x114); con 64 o 32, una ventana sin puntuar
+// dejo sin puntuacion el resto de la entrevista (6 y 2). Cada ventana se
+// condiciona solo con el prompt fijo (glosario + STYLE_PROMPT).
 constexpr int MAIN_PASS_MAX_TEXT_CTX = 0;
 
-// Frase de estilo que se repite como contexto en cada ventana: whisper imita
-// la forma del texto previo, asi que un ejemplo con puntuacion, tildes y
-// signos de pregunta sostiene ese estilo durante toda la entrevista. Va al
-// final del prompt (lo mas cercano al audio, lo que mas pesa).
-constexpr std::string_view STYLE_PROMPT = "Transcripción fiel de una entrevista, con puntuación, tildes y signos de pregunta: ¿cómo funciona? Bien, se lo explico.";
+// Ejemplo de habla puntuada que se repite como contexto en cada ventana:
+// whisper imita la forma del texto previo. Es dialogo neutro a proposito: una
+// version anterior ("Transcripción fiel de una entrevista, con puntuación...")
+// era metatexto, whisper la copiaba en tramos dificiles y la palabra
+// "Transcripción" disparaba creditos de subtitulos alucinados (ADR-020). Si
+// igual la copia, isPromptEcho la descarta y repairGaps recupera el tramo.
+constexpr std::string_view STYLE_PROMPT = "¿Y cómo lo hacen ustedes? Bueno, depende del caso, pero en general sí.";
 
-// Segmentos consecutivos con el mismo texto a partir de los cuales se
-// considera un bucle de alucinacion. En habla real una misma frase no se
-// repite 4 veces seguidas como segmentos separados.
-constexpr size_t LOOP_MIN_REPEATS = 4;
+// Bucle de alucinacion: segmentos consecutivos que repiten lo mismo. Un texto
+// largo (>= LOOP_CONTAINMENT_MIN_CHARS normalizado) cuenta como repeticion si
+// contiene al otro o esta contenido en el (whisper repite con variaciones: la
+// misma frase duplicada, un "Sí," delante); uno corto tiene que ser identico,
+// porque "Sí." / "Sí, claro." seguidos son habla normal.
+constexpr size_t LOOP_MIN_REPEATS_LONG = 3;
+constexpr size_t LOOP_MIN_REPEATS_SHORT = 4;
+constexpr size_t LOOP_CONTAINMENT_MIN_CHARS = 15;
+
+// Tramo sin ningun signo de puntuacion a partir del cual se considera que
+// whisper derivo a texto sin puntuar y se re-transcribe (repairUnpunctuated).
+constexpr int64_t UNPUNCTUATED_MIN_CS = 6000;  // 60s
+
+// Hueco entre segmentos a partir del cual se re-transcribe (repairGaps):
+// whisper descarta ventanas enteras de 20-30s cuando la decodificacion no lo
+// convence (no_speech_prob > 0.6 y avg_logprob < -1), aunque haya habla.
+constexpr int64_t GAP_MIN_CS = 800;  // 8s
+// En la re-transcripcion de huecos, whisper descarta menos: el VAD ya dice si
+// hay habla, y si el hueco era silencio no devuelve nada.
+constexpr float GAP_NO_SPEECH_THOLD = 0.8f;
+constexpr float DEFAULT_NO_SPEECH_THOLD = 0.6f;  // default de whisper.cpp 1.8.6
+
+// Eco del prompt (whisper copia su contexto cuando no entiende el audio): el
+// segmento contiene un tramo continuo del prompt de al menos
+// ECHO_MIN_COPY_CHARS (sin espacios ni puntuacion) que ocupa al menos
+// ECHO_MIN_SHARE del segmento. Se compara texto continuo y no palabras
+// sueltas porque la frase de estilo usa palabras comunes ("bueno", "pero").
+constexpr size_t ECHO_MIN_COPY_CHARS = 25;
+constexpr double ECHO_MIN_SHARE = 0.5;
 
 // Beam search: mas robusto que greedy (menos palabras inventadas/omitidas),
 // pero varias veces mas lento. En GPU se usa en la pasada principal; en CPU
 // solo para re-transcribir tramos en bucle (unos minutos, no la entrevista).
 constexpr int BEAM_SIZE = 5;
 
-// Tope de tokens del prompt inicial (glosario + STYLE_PROMPT). whisper.cpp
-// acota todo el contexto de texto a n_text_ctx/2 = 224 tokens
-// (whisper.cpp:6913); 150 deja margen para el marcador de contexto previo.
+// Tope de tokens del glosario como initial_prompt. whisper.cpp acota todo el
+// contexto de texto a n_text_ctx/2 = 224 tokens (whisper.cpp:6913); con 150
+// para el glosario quedan los de MAIN_PASS_MAX_TEXT_CTX + el marcador.
 constexpr int MAX_PROMPT_TOKENS = 150;
 constexpr int WHISPER_MAX_TEXT_CTX = 224;
 
@@ -119,13 +143,109 @@ std::string normalizeForComparison(const std::string& text) {
     return normalized;
 }
 
+// Saca tildes/dieresis de las vocales y la ñ (UTF-8, minusculas) para
+// comparar sin depender de como whisper acentuo: "subtítulos" == "subtitulos".
+std::string foldAccents(std::string text) {
+    static const std::array<std::pair<std::string_view, char>, 7> MAP = {{
+        {"\xC3\xA1", 'a'}, {"\xC3\xA9", 'e'}, {"\xC3\xAD", 'i'}, {"\xC3\xB3", 'o'},
+        {"\xC3\xBA", 'u'}, {"\xC3\xBC", 'u'}, {"\xC3\xB1", 'n'},
+    }};
+    for (const auto& [from, to] : MAP) {
+        size_t pos = 0;
+        while ((pos = text.find(from, pos)) != std::string::npos) {
+            text.replace(pos, from.size(), 1, to);
+            ++pos;
+        }
+    }
+    // Signos de apertura "¿" y "¡": puntuacion, whisper a veces los omite.
+    for (const std::string_view mark : {std::string_view("\xC2\xBF"), std::string_view("\xC2\xA1")}) {
+        size_t pos = 0;
+        while ((pos = text.find(mark, pos)) != std::string::npos) text.erase(pos, mark.size());
+    }
+    return text;
+}
+
+// Creditos de subtitulado que whisper aprendio de su entrenamiento y emite en
+// audio que no entiende ("Transcripción y subtítulos por José Miguel Pinto...",
+// entrevista 1). Inequivocos en una entrevista: se descartan donde aparezcan,
+// sin limite de duracion. Comparados sin espacios ni tildes.
+constexpr std::array<std::string_view, 4> HALLUCINATION_SUBSTRINGS = {
+    "amaraorg",
+    "subtitulospor",
+    "subtituladopor",
+    "transcripcionysubtitulos",
+};
+
 bool isKnownHallucination(const RawSegment& segment) {
-    if (segment.t1 - segment.t0 > HALLUCINATION_MAX_CS) return false;
-    const std::string normalized = normalizeForComparison(segment.text);
+    const std::string normalized = foldAccents(normalizeForComparison(segment.text));
     if (normalized.empty()) return false;
-    // "amara.org" aparece con variantes (con/sin tilde en "subtítulos").
-    if (normalized.find("amaraorg") != std::string::npos) return true;
+    for (const auto pattern : HALLUCINATION_SUBSTRINGS) {
+        if (normalized.find(pattern) != std::string::npos) return true;
+    }
+    if (segment.t1 - segment.t0 > HALLUCINATION_MAX_CS) return false;
     return std::find(HALLUCINATION_PHRASES.begin(), HALLUCINATION_PHRASES.end(), normalized) != HALLUCINATION_PHRASES.end();
+}
+
+// Palabras normalizadas (minusculas, sin puntuacion ni tildes).
+std::vector<std::string> normalizedWords(const std::string& text) {
+    std::vector<std::string> words;
+    std::string current;
+    for (unsigned char c : text) {
+        if (c >= 0x80 || std::isalnum(c)) {
+            current += static_cast<char>(std::tolower(c));
+        } else if (!current.empty()) {
+            words.push_back(foldAccents(current));
+            current.clear();
+        }
+    }
+    if (!current.empty()) words.push_back(foldAccents(current));
+    return words;
+}
+
+// Largo del tramo continuo mas largo comun a a y b (programacion dinamica
+// con dos filas: segmento ~cientos de bytes x prompt <1000, barato).
+size_t longestCommonSubstring(const std::string& a, const std::string& b) {
+    if (a.empty() || b.empty()) return 0;
+    std::vector<size_t> previous(b.size() + 1, 0);
+    std::vector<size_t> current(b.size() + 1, 0);
+    size_t best = 0;
+    for (size_t i = 1; i <= a.size(); ++i) {
+        for (size_t j = 1; j <= b.size(); ++j) {
+            current[j] = a[i - 1] == b[j - 1] ? previous[j - 1] + 1 : 0;
+            best = std::max(best, current[j]);
+        }
+        std::swap(previous, current);
+    }
+    return best;
+}
+
+// Segmento que repite el prompt (glosario o frase de estilo) en vez de
+// transcribir el audio. promptNormalized: prompt sin espacios, puntuacion ni
+// tildes (ver normalizeForComparison / foldAccents).
+bool isPromptEcho(const RawSegment& segment, const std::string& promptNormalized) {
+    if (promptNormalized.empty()) return false;
+    const std::string text = foldAccents(normalizeForComparison(segment.text));
+    if (text.size() < ECHO_MIN_COPY_CHARS) return false;
+    const size_t copied = longestCommonSubstring(text, promptNormalized);
+    return copied >= ECHO_MIN_COPY_CHARS && static_cast<double>(copied) >= ECHO_MIN_SHARE * static_cast<double>(text.size());
+}
+
+bool hasPunctuation(const std::string& text) {
+    return text.find_first_of(".,?!") != std::string::npos || text.find("\xC2\xBF") != std::string::npos;  // "¿"
+}
+
+size_t wordCount(const std::vector<RawSegment>& segments) {
+    size_t count = 0;
+    for (const auto& segment : segments) count += normalizedWords(segment.text).size();
+    return count;
+}
+
+// Mismo enunciado repetido: identico, o (si es largo) uno contiene al otro.
+bool sameUtterance(const std::string& a, const std::string& b) {
+    if (a.empty() || b.empty()) return false;
+    if (a == b) return true;
+    if (std::min(a.size(), b.size()) < LOOP_CONTAINMENT_MIN_CHARS) return false;
+    return a.find(b) != std::string::npos || b.find(a) != std::string::npos;
 }
 
 struct RepeatRun {
@@ -141,8 +261,9 @@ std::vector<RepeatRun> findRepeatRuns(const std::vector<RawSegment>& segments) {
     std::string startText = normalizeForComparison(segments[0].text);
     for (size_t i = 1; i <= segments.size(); ++i) {
         const std::string text = i < segments.size() ? normalizeForComparison(segments[i].text) : std::string();
-        if (i < segments.size() && !text.empty() && text == startText) continue;
-        if (i - start >= LOOP_MIN_REPEATS) {
+        if (i < segments.size() && sameUtterance(text, startText)) continue;
+        const size_t minRepeats = startText.size() >= LOOP_CONTAINMENT_MIN_CHARS ? LOOP_MIN_REPEATS_LONG : LOOP_MIN_REPEATS_SHORT;
+        if (i - start >= minRepeats) {
             runs.push_back({start, i - 1});
         }
         start = i;
@@ -157,6 +278,53 @@ std::string formatClock(int64_t centiseconds) {
     std::snprintf(buf, sizeof(buf), "%02lld:%02lld",
                   static_cast<long long>(totalSeconds / 60), static_cast<long long>(totalSeconds % 60));
     return std::string(buf);
+}
+
+// Quita los segmentos que no son transcripcion del audio: creditos de
+// subtitulado y frases conocidas, densidad de texto imposible, y eco del
+// glosario. Cada descarte queda en el log para poder auditarlo.
+// Un segmento con densidad imposible solo es alucinacion si ademas repite lo
+// dicho cerca (entrevista 6, 01:49: tres copias de la pregunta anterior en
+// 100-360ms). Si su texto es unico, es habla real con la marca de tiempo rota
+// (entrevista 2, 44:42-45:16: diez segmentos de 100ms con la pregunta real) y
+// se conserva.
+constexpr size_t DUPLICATE_NEIGHBOR_WINDOW = 3;
+
+bool repeatsNeighbor(const std::vector<RawSegment>& segments, size_t index) {
+    const std::string text = normalizeForComparison(segments[index].text);
+    if (text.empty()) return false;
+    const size_t from = index > DUPLICATE_NEIGHBOR_WINDOW ? index - DUPLICATE_NEIGHBOR_WINDOW : 0;
+    const size_t to = std::min(segments.size(), index + DUPLICATE_NEIGHBOR_WINDOW + 1);
+    for (size_t j = from; j < to; ++j) {
+        if (j == index) continue;
+        const std::string other = normalizeForComparison(segments[j].text);
+        if (!other.empty() && (other.find(text) != std::string::npos || text.find(other) != std::string::npos)) return true;
+    }
+    return false;
+}
+
+std::vector<RawSegment> dropHallucinations(std::vector<RawSegment> segments, const std::string& promptNormalized) {
+    std::vector<RawSegment> kept;
+    kept.reserve(segments.size());
+    for (size_t i = 0; i < segments.size(); ++i) {
+        auto& segment = segments[i];
+        std::string reason;
+        if (isKnownHallucination(segment)) {
+            reason = "alucinacion conocida";
+        } else if (isImplausiblyDense(segment) && repeatsNeighbor(segments, i)) {
+            reason = "densidad imposible repitiendo un segmento cercano (" + std::to_string(utf8Length(segment.text)) +
+                     " caracteres en " + std::to_string((segment.t1 - segment.t0) * 10) + "ms)";
+        } else if (isPromptEcho(segment, promptNormalized)) {
+            reason = "eco del glosario";
+        }
+        if (!reason.empty()) {
+            log_event("[WhisperTranscriber][transcribe] Segmento descartado por " + reason + " (" + formatClock(segment.t0) +
+                      "): " + segment.text);
+            continue;
+        }
+        kept.push_back(std::move(segment));
+    }
+    return kept;
 }
 
 // Sin esto, un audio largo no deja ningun rastro en el log entre
@@ -305,12 +473,11 @@ std::string WhisperTranscriber::buildInitialPrompt(const std::vector<std::string
         return whisper_tokenize(m_context, text.c_str(), tokens.data(), static_cast<int>(tokens.size()));
     };
 
+    // "Glosario: a, b, c. <estilo>": la frase de estilo va al final (lo mas
+    // cercano al audio, lo que mas pesa) y los terminos entran mientras quepan.
     const std::string style(STYLE_PROMPT);
     std::string prompt = style;
     promptTokens = countTokens(prompt);
-
-    // "Glosario: a, b, c. <estilo>": se agregan terminos mientras entren en
-    // MAX_PROMPT_TOKENS junto con la frase de estilo.
     std::string glossary;
     size_t used = 0;
     for (const auto& keyword : keywords) {
@@ -348,12 +515,13 @@ std::vector<TranscriptSegment> WhisperTranscriber::transcribe(const std::string&
                   "Configurable con WHISPER_VAD_MODEL_PATH.");
     }
 
-    // Prompt fijo (glosario ADR-018 + estilo): carry_initial_prompt lo repite
-    // en cada ventana de 30s, no solo en la primera. n_max_text_ctx es el
-    // presupuesto TOTAL de contexto (prompt + texto previo), asi que se le
-    // suma el prompt para no comerse el contexto dinamico.
+    // Glosario (ADR-018): carry_initial_prompt lo repite en cada ventana de
+    // 30s, no solo en la primera. n_max_text_ctx es el presupuesto TOTAL de
+    // contexto (glosario + texto previo), asi que se le suma el glosario para
+    // no comerse el contexto dinamico.
     int promptTokens = 0;
     const std::string initialPrompt = buildInitialPrompt(options.keywords, promptTokens);
+    const std::string promptNormalized = foldAccents(normalizeForComparison(initialPrompt));
     auto applyPrompt = [&](whisper_full_params& p, int dynamicContext) {
         if (promptTokens <= 0) {
             p.n_max_text_ctx = dynamicContext;
@@ -365,7 +533,7 @@ std::vector<TranscriptSegment> WhisperTranscriber::transcribe(const std::string&
     };
 
     // Pasada principal: beam search en GPU (fidelidad), greedy en CPU
-    // (velocidad). Sin texto previo en ambos casos (ver MAIN_PASS_MAX_TEXT_CTX).
+    // (velocidad). Contexto previo acotado en ambos casos.
     whisper_full_params params = whisper_full_default_params(m_gpuActive ? WHISPER_SAMPLING_BEAM_SEARCH : WHISPER_SAMPLING_GREEDY);
     if (m_gpuActive) {
         params.beam_search.beam_size = BEAM_SIZE;
@@ -421,23 +589,122 @@ std::vector<TranscriptSegment> WhisperTranscriber::transcribe(const std::string&
         segments.insert(segments.begin() + it->first, replacement.begin(), replacement.end());
     }
 
+    segments = dropHallucinations(std::move(segments), promptNormalized);
+    repairUnpunctuated(samples, useVad, promptNormalized, segments);
+    repairGaps(samples, useVad, promptNormalized, segments);
+
     std::vector<TranscriptSegment> result;
     result.reserve(segments.size());
     for (auto& segment : segments) {
-        if (isKnownHallucination(segment)) {
-            log_event("[WhisperTranscriber][transcribe] Segmento descartado por alucinacion conocida (" +
-                      formatClock(segment.t0) + "): " + segment.text);
-            continue;
-        }
-        if (isImplausiblyDense(segment)) {
-            log_event("[WhisperTranscriber][transcribe] Segmento descartado por densidad imposible (" +
-                      std::to_string(utf8Length(segment.text)) + " caracteres en " +
-                      std::to_string((segment.t1 - segment.t0) * 10) + "ms, " + formatClock(segment.t0) + "): " + segment.text);
-            continue;
-        }
         result.push_back({segment.t0 * 10, segment.t1 * 10, std::move(segment.text), std::move(segment.words)});
     }
     return result;
+}
+
+std::vector<RawSegment> WhisperTranscriber::retranscribe(const std::vector<float>& samples,
+                                                         int64_t t0Cs,
+                                                         int64_t t1Cs,
+                                                         bool useVad,
+                                                         float noSpeechThold) {
+    // Sin prompt ni texto previo: cada ventana se decodifica solo con el
+    // audio, sin nada que copiar ni deriva que arrastrar.
+    whisper_full_params params = whisper_full_default_params(WHISPER_SAMPLING_BEAM_SEARCH);
+    params.beam_search.beam_size = BEAM_SIZE;
+    params.n_max_text_ctx = 0;
+    params.no_speech_thold = noSpeechThold;
+
+    const size_t firstSample = std::min(samples.size(), static_cast<size_t>(std::max<int64_t>(t0Cs, 0) * SAMPLES_PER_CENTISECOND));
+    const size_t lastSample = std::min(samples.size(), static_cast<size_t>(std::max<int64_t>(t1Cs, 0) * SAMPLES_PER_CENTISECOND));
+    if (lastSample <= firstSample) return {};
+    return runWhisper(params, samples.data() + firstSample, lastSample - firstSample, t0Cs, useVad);
+}
+
+void WhisperTranscriber::repairUnpunctuated(const std::vector<float>& samples,
+                                            bool useVad,
+                                            const std::string& promptNormalized,
+                                            std::vector<RawSegment>& segments) {
+    // Tramos [first, last] de segmentos consecutivos sin ningun signo de
+    // puntuacion que duran UNPUNCTUATED_MIN_CS o mas: whisper derivo a texto
+    // sin puntuar (lo arrastra el contexto previo hasta el final del audio).
+    std::vector<std::pair<size_t, size_t>> runs;
+    for (size_t i = 0; i < segments.size();) {
+        if (hasPunctuation(segments[i].text)) {
+            ++i;
+            continue;
+        }
+        size_t j = i;
+        while (j + 1 < segments.size() && !hasPunctuation(segments[j + 1].text)) ++j;
+        if (segments[j].t1 - segments[i].t0 >= UNPUNCTUATED_MIN_CS) runs.emplace_back(i, j);
+        i = j + 1;
+    }
+
+    // De atras hacia adelante: reemplazar un tramo no invalida los anteriores.
+    for (auto it = runs.rbegin(); it != runs.rend(); ++it) {
+        const auto [first, last] = *it;
+        const int64_t t0 = segments[first].t0;
+        const int64_t t1 = segments[last].t1;
+        const std::string range = formatClock(t0) + "-" + formatClock(t1);
+        log_event("[WhisperTranscriber][repairUnpunctuated] Tramo sin puntuacion (" + range + ", " +
+                  std::to_string(last - first + 1) + " segmentos), re-transcribiendo sin contexto");
+
+        std::vector<RawSegment> retry = dropHallucinations(retranscribe(samples, t0, t1, useVad, DEFAULT_NO_SPEECH_THOLD), promptNormalized);
+        size_t punctuated = 0;
+        for (const auto& segment : retry) {
+            if (hasPunctuation(segment.text)) ++punctuated;
+        }
+        const std::vector<RawSegment> original(segments.begin() + static_cast<long>(first), segments.begin() + static_cast<long>(last) + 1);
+        const size_t originalWords = wordCount(original);
+        const size_t retryWords = wordCount(retry);
+
+        // Se acepta solo si de verdad mejora: puntuado, sin bucles y sin
+        // perder contenido (el texto sin puntuar sigue siendo mejor que nada).
+        if (retry.empty() || punctuated * 2 < retry.size() || retryWords * 10 < originalWords * 7 || !findRepeatRuns(retry).empty()) {
+            log_event("[WhisperTranscriber][repairUnpunctuated] Tramo " + range + " no mejoro (" + std::to_string(punctuated) + "/" +
+                      std::to_string(retry.size()) + " segmentos puntuados, " + std::to_string(retryWords) + " vs " +
+                      std::to_string(originalWords) + " palabras), se conserva el original");
+            continue;
+        }
+        log_event("[WhisperTranscriber][repairUnpunctuated] Tramo " + range + " recuperado con puntuacion (" +
+                  std::to_string(retry.size()) + " segmentos, " + std::to_string(retryWords) + " vs " +
+                  std::to_string(originalWords) + " palabras)");
+        segments.erase(segments.begin() + static_cast<long>(first), segments.begin() + static_cast<long>(last) + 1);
+        segments.insert(segments.begin() + static_cast<long>(first), retry.begin(), retry.end());
+    }
+}
+
+void WhisperTranscriber::repairGaps(const std::vector<float>& samples,
+                                    bool useVad,
+                                    const std::string& promptNormalized,
+                                    std::vector<RawSegment>& segments) {
+    // Huecos sin texto de GAP_MIN_CS o mas, incluido el inicio y el final del
+    // audio. Muchos son silencio real (el VAD no devuelve nada ahi); otros son
+    // ventanas que whisper descarto con habla adentro.
+    std::vector<std::pair<int64_t, int64_t>> gaps;
+    int64_t previousEnd = 0;
+    for (const auto& segment : segments) {
+        if (segment.t0 - previousEnd >= GAP_MIN_CS) gaps.emplace_back(previousEnd, segment.t0);
+        previousEnd = std::max(previousEnd, segment.t1);
+    }
+    const int64_t audioEnd = static_cast<int64_t>(samples.size()) / SAMPLES_PER_CENTISECOND;
+    if (audioEnd - previousEnd >= GAP_MIN_CS) gaps.emplace_back(previousEnd, audioEnd);
+    if (gaps.empty()) return;
+
+    std::vector<RawSegment> recovered;
+    size_t recoveredGaps = 0;
+    for (const auto& [t0, t1] : gaps) {
+        std::vector<RawSegment> retry = dropHallucinations(retranscribe(samples, t0, t1, useVad, GAP_NO_SPEECH_THOLD), promptNormalized);
+        if (retry.empty() || !findRepeatRuns(retry).empty()) continue;
+        ++recoveredGaps;
+        log_event("[WhisperTranscriber][repairGaps] Hueco " + formatClock(t0) + "-" + formatClock(t1) + " recuperado (" +
+                  std::to_string(retry.size()) + " segmentos, " + std::to_string(wordCount(retry)) + " palabras)");
+        recovered.insert(recovered.end(), std::make_move_iterator(retry.begin()), std::make_move_iterator(retry.end()));
+    }
+    log_event("[WhisperTranscriber][repairGaps] Huecos revisados: " + std::to_string(gaps.size()) + ", con habla recuperada: " +
+              std::to_string(recoveredGaps));
+    if (recovered.empty()) return;
+
+    segments.insert(segments.end(), std::make_move_iterator(recovered.begin()), std::make_move_iterator(recovered.end()));
+    std::stable_sort(segments.begin(), segments.end(), [](const RawSegment& a, const RawSegment& b) { return a.t0 < b.t0; });
 }
 
 std::vector<RawSegment> WhisperTranscriber::runWhisper(whisper_full_params params,

@@ -24,6 +24,10 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/), versionado se
   - Validada en dos entrevistas reales. En audio con voces muy parecidas o diálogo muy rápido puede no separar, y entonces entrega la transcripción sin hablantes.
   - Opcional: sin la DLL y los modelos se transcribe igual, sin hablantes.
 - Capturas de la interfaz en el README.
+- **Reproducción sincronizada en la vista de lectura** (ADR-023).
+  - Reproductor que resalta el turno que se está escuchando, con seguimiento automático, en lectura y en edición.
+  - Clic en una marca de tiempo para saltar; ±5 s, velocidad y atajos Alt+K / Alt+J / Alt+L.
+  - Nuevo `GET /interview/:id/audio` con soporte de `Range` (206), implementado a mano porque Crow no lo trae.
 - **Aceleración por GPU (Vulkan)** para whisper.cpp, con caída automática a CPU (`WHISPER_USE_GPU`, ADR-020).
 - **Edición de la transcripción en la vista de lectura** (ADR-022).
   - Texto y hablante por turno; dividir, unir y eliminar turnos; intercambiar los dos hablantes.
@@ -46,6 +50,13 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/), versionado se
 
 ### Fixed
 
+- **Frase de estilo filtrada y texto cortado.**
+  - En audio difícil, whisper copiaba en la transcripción la frase de estilo del prompt ("Transcripción fiel de una entrevista, con puntuación…") y descartaba ventanas enteras de 20-30 s con habla.
+  - Se reemplazó por una línea de diálogo neutra ("¿Y cómo lo hacen ustedes? Bueno, depende del caso…").
+  - Se descartan los ecos del prompt y los créditos de subtítulos alucinados ("Transcripción y subtítulos por…").
+  - Se re-transcriben los huecos y los tramos largos sin puntuar.
+  - Entrevista 2: 0 frases filtradas (antes 5), 0 s de habla perdida (antes 21 s), 48 de 49 minutos puntuados.
+- El filtro de densidad ya no borra habla real con marcas de tiempo rotas: solo descarta segmentos densos que repiten un segmento cercano.
 - La vista de lectura nunca mostraba marcas de tiempo: los inicios de segmento se leían como número desde un texto `"00:00:02"` y la lectura fallaba siempre.
 - El backend no se reconectaba a MySQL: tras un reinicio de MySQL respondía todo con "Server has gone away" hasta reiniciarlo. Ahora reconecta solo.
 - Subir un segundo audio a una entrevista fallaba con `Duplicate entry` y el archivo quedaba huérfano en `./uploads`. Ningún upload rechazado queda ya en disco.

@@ -25,6 +25,9 @@ class InterviewController {
         // descarta y vuelve a la del pipeline (DELETE .../transcript/edits).
         crow::response updateTranscript(const crow::request& req, int id);
         crow::response restoreTranscript(int id);
+        // Audio normalizado para el reproductor de la vista de lectura, con
+        // soporte de Range (206) para poder saltar sin descargarlo entero.
+        crow::response getAudio(const crow::request& req, int id);
 
     private:
         InterviewService& m_service;

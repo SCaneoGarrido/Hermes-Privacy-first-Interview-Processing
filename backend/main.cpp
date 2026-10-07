@@ -176,6 +176,10 @@ int main()
         return interviewController.restoreTranscript(id);
     });
 
+    CROW_ROUTE(app, "/api/v1/interview/<int>/audio").methods(crow::HTTPMethod::GET)([&interviewController](const crow::request& req, int id) {
+        return interviewController.getAudio(req, id);
+    });
+
     CROW_ROUTE(app, "/api/v1/interview/<int>/download/transcript").methods(crow::HTTPMethod::GET)([&interviewController](int id) {
         return interviewController.downloadTranscript(id);
     });

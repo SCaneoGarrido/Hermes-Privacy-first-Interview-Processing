@@ -115,6 +115,32 @@ crow::response transcriptEditResponse(int id, const TranscriptEditOutcome& outco
     return ApiResponse::success(200, serializeTranscriptDocument(id, outcome.document));
 }
 
+// "bytes=100-199" | "bytes=100-" | "bytes=-500" -> rango; nullopt si falta o
+// no se entiende (se responde el archivo completo, como indica HTTP). Si hay
+// varios rangos solo se usa el primero (los navegadores piden uno).
+std::optional<AudioByteRange> parseRangeHeader(const std::string& header) {
+    const std::string prefix = "bytes=";
+    if (header.compare(0, prefix.size(), prefix) != 0) return std::nullopt;
+    std::string spec = header.substr(prefix.size());
+    spec = spec.substr(0, spec.find(','));
+    const size_t dash = spec.find('-');
+    if (dash == std::string::npos) return std::nullopt;
+
+    auto toNumber = [](const std::string& text) -> std::optional<long long> {
+        if (text.empty() || text.find_first_not_of("0123456789") != std::string::npos) return std::nullopt;
+        try {
+            return std::stoll(text);
+        } catch (const std::exception&) {
+            return std::nullopt;
+        }
+    };
+    AudioByteRange range;
+    range.start = toNumber(spec.substr(0, dash));
+    range.end = toNumber(spec.substr(dash + 1));
+    if (!range.start && !range.end) return std::nullopt;
+    return range;
+}
+
 std::optional<double> readOptionalNumber(const crow::json::rvalue& item, const char* key) {
     if (!item.has(key)) return std::nullopt;
     const auto& value = item[key];
@@ -350,6 +376,49 @@ crow::response InterviewController::updateTranscript(const crow::request& req, i
         log_error_ss << "[interviewController][updateTranscript] Fallo en updateTranscript. Detalle: " << e.what();
         log_event(log_error_ss.str());
         return ApiResponse::failure(500, "INTERNAL_SERVER_ERROR", "Error guardando la transcripcion");
+    }
+}
+
+crow::response InterviewController::getAudio(const crow::request& req, int id) {
+    try {
+        using Status = AudioOutcome::Status;
+        auto outcome = m_service.readAudio(id, parseRangeHeader(req.get_header_value("Range")));
+        switch (outcome.status) {
+            case Status::NotFound:
+                return ApiResponse::failure(404, "NOT_FOUND", "No existe una entrevista con ese id");
+            case Status::NotAvailable:
+                return ApiResponse::failure(404, "AUDIO_NOT_AVAILABLE",
+                                            "El audio de esta entrevista todavía no está disponible (se genera al procesarla)");
+            case Status::RangeNotSatisfiable: {
+                crow::response res(416);
+                res.set_header("Content-Range", "bytes */" + std::to_string(outcome.totalSize));
+                return res;
+            }
+            case Status::Ok:
+                break;
+        }
+
+        crow::response res;
+        if (outcome.partial) {
+            res.code = 206;
+            res.body = std::move(outcome.bytes);
+            res.set_header("Content-Type", "audio/wav");
+            res.set_header("Content-Range", "bytes " + std::to_string(outcome.start) + "-" + std::to_string(outcome.end) + "/" +
+                                                std::to_string(outcome.totalSize));
+        } else {
+            // Archivo completo por streaming (Crow lo lee de a partes).
+            res.set_static_file_info_unsafe(outcome.path, "audio/wav");
+        }
+        res.set_header("Accept-Ranges", "bytes");
+        // Audio de una entrevista: que el navegador no lo deje en su cache de disco.
+        res.set_header("Cache-Control", "no-store");
+        return res;
+
+    } catch (const std::exception& e) {
+        std::stringstream log_error_ss;
+        log_error_ss << "[interviewController][getAudio] Fallo en getAudio. Detalle: " << e.what();
+        log_event(log_error_ss.str());
+        return ApiResponse::failure(500, "INTERNAL_SERVER_ERROR", "Error leyendo el audio");
     }
 }
 

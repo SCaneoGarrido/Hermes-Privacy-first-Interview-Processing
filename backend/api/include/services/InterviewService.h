@@ -59,6 +59,26 @@ struct TranscriptBlockInput {
     std::string text;
 };
 
+// Rango de bytes pedido por el navegador (encabezado Range). start vacio con
+// end presente = sufijo: los ultimos `end` bytes ("bytes=-500").
+struct AudioByteRange {
+    std::optional<long long> start;
+    std::optional<long long> end;  // inclusivo
+};
+
+// Audio de la entrevista para el reproductor de la vista de lectura.
+// Sin rango (Ok, partial=false): path y totalSize para enviarlo entero por
+// streaming. Con rango (Ok, partial=true): bytes [start, end] ya leidos.
+struct AudioOutcome {
+    enum class Status { NotFound, NotAvailable, RangeNotSatisfiable, Ok } status;
+    bool partial = false;
+    std::string path;
+    long long totalSize = 0;
+    long long start = 0;
+    long long end = 0;  // inclusivo
+    std::string bytes;
+};
+
 // Resultado de guardar/restaurar ediciones. Busy: hay un procesamiento en
 // curso (reemplazaria la transcripcion). NotEditable: entrevista procesada
 // antes de la transcripcion estructurada (ADR-022), hay que reprocesarla.
@@ -123,6 +143,10 @@ class InterviewService {
         TranscriptEditOutcome updateTranscript(int interviewId, const std::vector<TranscriptBlockInput>& blocks);
         // Descarta las ediciones y vuelve a la version del pipeline.
         TranscriptEditOutcome restoreTranscript(int interviewId);
+        // Audio normalizado (storage/interviews/<id>/audio.wav, la referencia
+        // de tiempo de la transcripcion) para el reproductor, entero o por
+        // rango. Cada rango se acota a Config::MAX_AUDIO_RANGE_BYTES (ADR-023).
+        AudioOutcome readAudio(int interviewId, const std::optional<AudioByteRange>& range);
 
     private:
         // Borra storage/interviews/<id> (transcripciones, resumen, audio

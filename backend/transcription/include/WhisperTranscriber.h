@@ -77,6 +77,21 @@ class WhisperTranscriber : public ITranscriber {
         // promptTokens: cuantos tokens ocupa. Debe llamarse con el modelo ya cargado.
         std::string buildInitialPrompt(const std::vector<std::string>& keywords, int& promptTokens);
 
+        // Re-transcribe [t0Cs, t1Cs) sin prompt ni texto previo (beam search).
+        // Debe llamarse con m_mutex ya tomado.
+        std::vector<RawSegment> retranscribe(const std::vector<float>& samples, int64_t t0Cs, int64_t t1Cs,
+                                             bool useVad, float noSpeechThold);
+
+        // Re-transcribe los tramos largos sin ningun signo de puntuacion
+        // (deriva de whisper) y los reemplaza si el resultado mejora.
+        void repairUnpunctuated(const std::vector<float>& samples, bool useVad,
+                                const std::string& promptNormalized, std::vector<RawSegment>& segments);
+
+        // Re-transcribe los huecos largos sin texto (ventanas que whisper
+        // descarto) e inserta lo que se recupere.
+        void repairGaps(const std::vector<float>& samples, bool useVad,
+                        const std::string& promptNormalized, std::vector<RawSegment>& segments);
+
         // Corre whisper_full sobre [samples, samples + sampleCount) y devuelve
         // los segmentos con tiempos en centisegundos, desplazados offsetCs
         // (para re-transcribir un tramo y ubicarlo en el audio completo).

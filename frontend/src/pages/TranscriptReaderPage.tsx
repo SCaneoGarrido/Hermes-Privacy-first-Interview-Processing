@@ -2,12 +2,15 @@ import { Fragment, ReactNode, useCallback, useEffect, useMemo, useRef, useState 
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { ApiError } from "../api/client";
 import {
+  audioUrl,
   getInterview,
   getTranscript,
   restoreTranscript,
   transcriptDownloadUrl,
   updateTranscript,
 } from "../api/interviews";
+import { activeBlockRange, effectiveStarts } from "../audioTimeline";
+import { TranscriptAudioPlayer } from "../components/TranscriptAudioPlayer";
 import type { InterviewDetail, SpeakerKey, TranscriptBlock, TranscriptDocument } from "../api/types";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { ErrorBanner } from "../components/ErrorBanner";
@@ -92,6 +95,32 @@ export function TranscriptReaderPage() {
   const [saving, setSaving] = useState(false);
   const [editError, setEditError] = useState<unknown>(null);
   const [confirmLeave, setConfirmLeave] = useState(false);
+
+  // Reproduccion sincronizada (ADR-023). El tiempo se guarda en pasos de
+  // 0,5 s: timeupdate llega ~4 veces por segundo y cada cambio re-renderiza el
+  // texto (o el editor, con cientos de bloques).
+  const audioRef = useRef<HTMLAudioElement>(null);
+  const [playbackTime, setPlaybackTime] = useState(0);
+  const [followAudio, setFollowAudio] = useState(true);
+  const blockRefs = useRef<(HTMLDivElement | null)[]>([]);
+
+  const onAudioTime = useCallback((seconds: number) => {
+    setPlaybackTime((previous) => {
+      const stepped = Math.floor(seconds * 2) / 2;
+      return stepped === previous ? previous : stepped;
+    });
+  }, []);
+
+  const seekTo = useCallback(
+    (seconds: number) => {
+      const audio = audioRef.current;
+      if (!audio) return;
+      audio.currentTime = seconds;
+      onAudioTime(seconds);
+      void audio.play();
+    },
+    [onAudioTime]
+  );
 
   useEffect(() => {
     getTranscript(interviewId).then(setTranscript).catch(setError);
@@ -179,6 +208,27 @@ export function TranscriptReaderPage() {
     if (!transcript) return 0;
     return transcript.blocks.reduce((n, b) => n + (b.text.match(MARKER_PATTERN)?.length ?? 0), 0);
   }, [transcript]);
+
+  // Bloque que se esta escuchando (vista de lectura). El editor calcula el
+  // suyo sobre el borrador, que puede tener bloques divididos o unidos.
+  const blockStarts = useMemo(() => (transcript ? effectiveStarts(transcript.blocks) : []), [transcript]);
+  const activeRange = useMemo(
+    () => (transcript && !editing ? activeBlockRange(transcript.blocks, playbackTime) : { first: -1, last: -1 }),
+    [transcript, editing, playbackTime]
+  );
+  const activeIndex = activeRange.first;
+  const isActive = (i: number) => i >= activeRange.first && i <= activeRange.last && activeRange.first >= 0;
+
+  // "Seguir el audio": el panel se desplaza hasta el bloque activo.
+  useEffect(() => {
+    if (!followAudio || activeIndex < 0) return;
+    const container = scrollRef.current;
+    const block = blockRefs.current[activeIndex];
+    if (!container || !block) return;
+    const top = block.offsetTop;
+    const visible = top >= container.scrollTop && top + block.offsetHeight <= container.scrollTop + container.clientHeight;
+    if (!visible) container.scrollTo({ top: Math.max(0, top - 24), behavior: "smooth" });
+  }, [activeIndex, followAudio]);
 
   const unavailable =
     error instanceof ApiError &&
@@ -334,6 +384,9 @@ export function TranscriptReaderPage() {
                   onCancel={stopEditing}
                   onRestore={restore}
                   onDirtyChange={onDirtyChange}
+                  playbackTime={transcript.has_timestamps ? playbackTime : null}
+                  followAudio={followAudio}
+                  onSeek={seekTo}
                 />
               </>
             ) : (
@@ -345,19 +398,51 @@ export function TranscriptReaderPage() {
                   tabIndex={0}
                   aria-label="Texto de la transcripción"
                 >
-                  {transcript.blocks.map((block, i) => (
-                    <div key={i} className={`turn${block.speaker ? ` turn-${block.speaker}` : ""}`}>
-                      <span className="turn-label">
-                        {block.speaker ? labelFor(block.speaker) : block.start != null ? formatTimestamp(block.start) : ""}
-                        {block.speaker && block.start != null && (
-                          <span className="turn-time">{formatTimestamp(block.start)}</span>
-                        )}
-                      </span>
-                      <p className="turn-text">{renderText(block.text, query)}</p>
-                    </div>
-                  ))}
+                  {transcript.blocks.map((block, i) => {
+                    const start = blockStarts[i];
+                    // Marca de tiempo: clic para escuchar desde ahi.
+                    const time =
+                      block.start != null && start != null ? (
+                        <button
+                          type="button"
+                          className="turn-time turn-seek"
+                          onClick={() => seekTo(start)}
+                          title="Escuchar desde aquí"
+                        >
+                          {formatTimestamp(block.start)}
+                        </button>
+                      ) : null;
+                    return (
+                      <div
+                        key={i}
+                        ref={(el) => {
+                          blockRefs.current[i] = el;
+                        }}
+                        className={`turn${block.speaker ? ` turn-${block.speaker}` : ""}${isActive(i) ? " turn-active" : ""}`}
+                        aria-current={i === activeIndex ? "true" : undefined}
+                      >
+                        <span className="turn-label">
+                          {block.speaker ? labelFor(block.speaker) : null}
+                          {time}
+                        </span>
+                        <p className="turn-text">{renderText(block.text, query)}</p>
+                      </div>
+                    );
+                  })}
                 </div>
               </>
+            )}
+
+            {/* Fuera del condicional de edicion: el audio sigue sonando al
+                entrar o salir del editor. */}
+            {transcript.has_timestamps && (
+              <TranscriptAudioPlayer
+                src={audioUrl(interviewId)}
+                audioRef={audioRef}
+                onTime={onAudioTime}
+                follow={followAudio}
+                onFollowChange={setFollowAudio}
+              />
             )}
           </section>
 

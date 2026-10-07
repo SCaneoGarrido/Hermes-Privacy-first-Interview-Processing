@@ -315,8 +315,14 @@ On every run:
 - `token_timestamps` gives per-word times;
 - the Silero VAD is tuned: threshold 0.45, min speech 250 ms, min silence 400 ms, speech pad 200 ms, max speech 30 s;
 - a short list of known subtitle hallucinations ("amara.org", "gracias por ver el video") is dropped. A segment is only dropped when it is the whole text of a segment of 3 s or less;
-- segments with an impossible text density are dropped: more than 35 characters per second plus a 10-character margin;
-- each 30 s window is conditioned only on a fixed, carried prompt (glossary + a well-punctuated Spanish style sentence, `STYLE_PROMPT`), with **no rolling context from the previous window** (`MAIN_PASS_MAX_TEXT_CTX = 0`, previously 64).
+- a segment with an impossible text density (more than 35 characters per second plus a 10-character margin) is dropped only if it also repeats a nearby segment. A unique dense segment is real speech with a broken timestamp: on interview 2, ten 100 ms segments carried a real question;
+- subtitle-credit hallucinations ("subtítulos por", "transcripción y subtítulos", "amara.org") are dropped wherever they appear, compared without accents;
+- each 30 s window is conditioned only on the carried prompt, with no rolling context (`MAIN_PASS_MAX_TEXT_CTX = 0`). The prompt is the glossary plus a neutral, punctuated dialogue line (`STYLE_PROMPT`: "¿Y cómo lo hacen ustedes? Bueno, depende del caso, pero en general sí."). It contains no meta words such as "transcripción" or "entrevista";
+- echoes of the prompt are dropped: a contiguous copy of at least 25 normalized characters of the prompt covering at least half of the segment. This is compared as continuous text because the style line uses common words;
+- after the main pass, two repair passes re-transcribe ranges with no prompt and no context (beam 5):
+  - stretches of 60 s or more without any punctuation, replaced only if the result is punctuated, loop-free and keeps at least 70% of the words;
+  - gaps of 8 s or more without text, using `no_speech_thold = 0.8`. A silent gap returns nothing through the VAD.
+- loop detection compares by containment for long texts (3 repeats) and by identity for short ones (4).
 
 Segments now carry milliseconds and words (`TranscriptSegment{startMs,endMs,text,words}`) instead of truncated "HH:MM:SS" strings.
 
@@ -334,7 +340,26 @@ Transcription fidelity is one of the two requirements for Hermes to be minimally
 - **Duplicated question.** It emitted three copies of the previous question in 100-360 ms segments (01:49). The density filter catches exactly those 3 of 379 segments.
 - **Lost punctuation.** With the 64-token rolling context, one unpunctuated window at minute 18 left the rest of the interview without punctuation or capitals. small showed the same failure from minute 31. In whisper.cpp 1.8.6 with `carry_initial_prompt`, each window's prompt is the initial prompt plus the previous window's tokens, so the style of one window leaks into every following window.
 
-Setting the rolling context to 0 and carrying a punctuated style sentence restored punctuation in every minute, with the same word count (4988 vs 4984) and no prompt text leaking into the output. Total time on the RX 9060 XT is about 13-15 min for the 36-min interview (transcription about 8, diarization about 4, glossary about 1).
+Setting the rolling context to 0 and carrying a punctuated style sentence restored punctuation in every minute of interview 6, with the same word count (4988 vs 4984). Total time on the RX 9060 XT is about 13-15 min for the 36-min interview (transcription about 8, diarization about 4, glossary about 1).
+
+**Style sentence reverted (2026-10-06).** On interviews 1, 2 and 10 (36-49 min, harder audio), the style sentence as the only context of every window caused two failures.
+- **Echoed prompt.** On difficult stretches whisper copied it instead of transcribing: "Transcripción fiel de una entrevista, con puntuación…", 4 segments in a row in interview 2 (27 s).
+- **Credit hallucination.** The word "Transcripción" primed "Transcripción y subtítulos por José Miguel Pinto…".
+- **Dropped windows.** In the same kind of stretch, whisper.cpp dropped whole windows (`no_speech_prob > 0.6` and `avg_logprob < -1`; segments are only kept when `!is_no_speech`). That left 20-30 s gaps with speech: 45, 21 and 44 s lost, measured by crossing whisper segments with `diarization.json`.
+
+Interview 6 did not show any of this because its audio is clean.
+
+**Interview 2 (49 min) under the three configurations:**
+
+| Configuration | Leaked text | Speech in gaps | Punctuated minutes | Words |
+|---|---|---|---|---|
+| Meta style sentence, context 0 | 5 | 21 s | 45/49 | 6319 |
+| Glossary only, context 32, repairs | 0 | 0 s | 23/50 | 6751 |
+| **Neutral style line, context 0, repairs + echo filter** | **0** | **0 s** | **48/49** | **6541** |
+
+- **Without any style line,** this speaker's audio stays unpunctuated even when re-transcribed with no context. Only 2 of 7 unpunctuated stretches improved, so the repair alone is not enough.
+- **With the neutral line,** the main pass was clean: no echo, no gap of 8 s or more, no unpunctuated stretch, no dropped segment.
+- **The repairs and the echo filter stay as safety nets** for audio where whisper still copies or drops windows.
 
 **Decoding thresholds.** whisper's temperature fallback and entropy/logprob thresholds were already at OpenAI's defaults, so they are not where the gain is.
 
@@ -445,3 +470,39 @@ A diarized transcript needs a format that keeps the speaker and the times of eve
 **Two files.** Keeping the pipeline output and the edits separate keeps traceability and allows restoring the original.
 
 **Why the LLM stopped labeling speakers.** Labeling from text was the source of the inversions and of the ~3% content loss at chunk boundaries (ADR-017). Per-index correction with fallback to the original cannot lose turns.
+
+---
+
+## ADR-023
+
+Synchronized Audio Playback in the Reading View
+
+Decision
+
+The reading view plays the interview audio and highlights the transcript block being heard, in both reading and edit mode.
+
+**Backend.** New `GET /api/v1/interview/:id/audio` serves the normalized `storage/interviews/<id>/audio.wav` (the exact audio the timestamps refer to).
+- With a `Range` header (`bytes=a-b`, `bytes=a-`, `bytes=-n`), it answers `206 Partial Content` with `Content-Range`, capped at 2 MB per response. The browser keeps requesting the following ranges.
+- Without `Range`, it answers `200` with the whole file streamed by Crow (`set_static_file_info_unsafe`, read in chunks, never fully in memory).
+- `416` for a range past the end; `404 AUDIO_NOT_AVAILABLE` when the interview was never processed.
+- `InterviewService::readAudio` resolves the path, validates the interview and reads the bytes. The controller only parses the `Range` header and builds the response.
+
+**Frontend.** A native `<audio preload="metadata">` player sits fixed below the transcript panel, with:
+- play/pause, back/forward 5 s and speed (0.75×-1.5×);
+- shortcuts Alt+K (play/pause) and Alt+J / Alt+L (5 s back/forward). They work while typing in the editor, and avoid Alt+←/→, which is "back/forward" in the browser and would leave the page mid-edit;
+- a "follow audio" toggle that scrolls the active block into view;
+- clicking a block's timestamp seeks the audio there.
+
+**Granularity.** Per block, using the `start`/`end` already returned by `GET /interview/:id/transcript`. Word-level highlighting is deferred: word times are approximate under VAD (ADR-020) and would require exposing words in the structured transcript.
+
+**Edited transcripts.** Blocks without `start` (created by splitting in the editor) inherit the time of the previous block, and both halves are highlighted together (`activeBlockRange` in `frontend/src/audioTimeline.ts`). In the editor, "follow audio" does not scroll while a text box has focus, so the text under the cursor doesn't move.
+
+Reason
+
+Correcting a transcript (ADR-022) requires listening to the audio: checking dubious words (e.g. "CESFAM"), fixing speaker attribution and resolving gaps. Until now the user had to open the audio in an external player and look for the timestamp by hand.
+
+- **No new dependency:** the browser's native `<audio>` element plus HTTP `Range` is enough.
+- **Range by hand:** Crow 1.3.3 serves static files only as `200` with the whole body (`http_response.h`, `set_static_file_info`). Without `206`, the browser cannot seek in a ~115 MB/hour WAV without downloading it.
+- **Why `audio.wav` and not the upload:** the original may not exist (a video is replaced by its extracted audio, ADR-016), and the WAV is the time reference of the timestamps.
+- **Why 2 MB per response:** a `bytes=0-` request (what browsers send first) would otherwise load the whole file into memory. Browsers handle short `206` responses and continue.
+- **Privacy:** everything stays local. The backend listens on `0.0.0.0` without authentication, so the audio becomes reachable from the local network just like transcripts already are (README § Limitaciones conocidas).

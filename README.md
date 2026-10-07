@@ -49,7 +49,12 @@ Con el backend y el frontend corriendo, más Ollama y un modelo de whisper.cpp d
     - Texto y hablante de cada turno; dividir, unir y eliminar turnos.
     - **Intercambiar los dos hablantes** de toda la entrevista con un clic.
     - Las ediciones se guardan aparte: la versión original se conserva y se puede restaurar. Volver a procesar la entrevista descarta las ediciones (la interfaz lo advierte antes).
-11. **Descargar** la transcripción (versión vigente, con nombres de hablante) y el resumen como `.txt`.
+11. **Escuchar la entrevista mientras se lee o se edita** (ADR-023).
+    - Reproductor debajo del texto que resalta el turno que se está escuchando y puede seguirlo automáticamente.
+    - Clic en una marca de tiempo para escuchar desde ahí.
+    - Saltos de 5 s y velocidad 0,75×-1,5×. Atajos: Alt+K pausa, Alt+J / Alt+L ±5 s; funcionan mientras se escribe en el editor.
+    - El audio se sirve por rangos: saltar a cualquier minuto no descarga el archivo entero.
+12. **Descargar** la transcripción (versión vigente, con nombres de hablante) y el resumen como `.txt`.
 
 Si Ollama no está corriendo o falla, la entrevista no se pierde: queda disponible la transcripción de whisper. Si se pidió anonimizar y esa fase falló, la transcripción entregada lo indica con un aviso al inicio del archivo (y en la portada de la vista de lectura).
 
@@ -105,7 +110,7 @@ Verificado contra entrevistas reales (no solo audio de prueba sintético). Lo qu
   - Quién es el investigador se deduce de quién hace más preguntas: en entrevistas atípicas puede salir invertido. Se corrige con «Intercambiar» en el editor.
 - whisper.cpp puede alucinar texto en otro idioma en tramos de audio poco claros.
 - El paso de palabras clave puede dejar algún bloque sin revisar si la respuesta del modelo se corta (queda registrado en el log).
-- **El backend escucha en todas las interfaces de red (`0.0.0.0:18080`) y no tiene autenticación** (está fuera de alcance). Cualquier equipo de la misma red local puede consultar la API y descargar transcripciones. Usarlo en una red de confianza, o cambiar el `bindaddr` a `127.0.0.1` en `backend/main.cpp` si el frontend corre en la misma máquina.
+- **El backend escucha en todas las interfaces de red (`0.0.0.0:18080`) y no tiene autenticación** (está fuera de alcance). Cualquier equipo de la misma red local puede consultar la API, descargar transcripciones y escuchar el audio de las entrevistas. Usarlo en una red de confianza, o cambiar el `bindaddr` a `127.0.0.1` en `backend/main.cpp` si el frontend corre en la misma máquina.
 - Sin GPU, `large-v3` en CPU es varias veces más lento que `small`: en una máquina solo CPU conviene `WHISPER_MODEL_PATH=./models/ggml-small.bin`. La diarización corre en CPU (unos 4 minutos por cada 35 minutos de audio).
 
 El detalle y el backlog priorizado de estos hallazgos están en `hermes-vault-knowledge/08 AI/Ollama Integration Strategy.md`.
@@ -245,6 +250,7 @@ PUT    /api/v1/interview/:id/keywords
 GET    /api/v1/interview/:id/transcript          (transcripción estructurada para la vista de lectura)
 PUT    /api/v1/interview/:id/transcript          (guarda la versión editada: { blocks })
 DELETE /api/v1/interview/:id/transcript/edits    (descarta las ediciones, vuelve al original)
+GET    /api/v1/interview/:id/audio               (audio normalizado para el reproductor; soporta Range → 206)
 GET    /api/v1/interview/:id/download/transcript
 GET    /api/v1/interview/:id/download/summary
 ```

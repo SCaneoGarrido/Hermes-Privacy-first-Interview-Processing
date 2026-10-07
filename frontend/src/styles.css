@@ -1788,6 +1788,96 @@ input[type="file"]::file-selector-button {
   white-space: nowrap;
 }
 
+/* ---------- Reproduccion sincronizada (ADR-023) ---------- */
+
+.audio-player {
+  position: sticky;
+  bottom: 0;
+  z-index: 3;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 1rem;
+  margin-top: 1rem;
+  padding: 0.6rem 0.8rem;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: 0 -6px 18px color-mix(in srgb, black 25%, transparent);
+}
+
+.audio-player audio {
+  flex: 1 1 320px;
+  min-width: 0;
+  height: 36px;
+}
+
+.audio-player-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem 0.6rem;
+}
+
+.audio-player-speed select {
+  min-height: 30px;
+}
+
+.audio-player-follow {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.82rem;
+}
+
+.audio-player-hint {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.audio-player-unavailable {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+/* Marca de tiempo que salta el audio a ese punto. */
+.turn-seek {
+  background: none;
+  border: none;
+  padding: 0;
+  min-height: auto;
+  width: auto;
+  font: inherit;
+  cursor: pointer;
+  text-decoration: underline dotted;
+  text-underline-offset: 3px;
+}
+
+.turn-seek:hover:not(:disabled) {
+  color: var(--accent-text);
+}
+
+.turn-seek:disabled {
+  cursor: default;
+  text-decoration: none;
+}
+
+.passages .turn-label .turn-time {
+  margin-top: 0;
+}
+
+/* Bloque que se esta escuchando. */
+.turn-active {
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--gold) 12%, transparent);
+  box-shadow: -4px 0 0 var(--gold);
+}
+
+.editor-block-active {
+  background: color-mix(in srgb, var(--gold) 10%, var(--bg));
+  border-color: var(--gold);
+}
+
 /* ---------- Editor de la transcripcion ---------- */
 
 .transcript-editor {
@@ -1987,8 +2077,14 @@ mark {
   .reader-toolbar,
   .editor-bar,
   .editor-block-actions,
+  .audio-player,
   .meander {
     display: none !important;
+  }
+
+  .turn-active {
+    background: none;
+    box-shadow: none;
   }
 
   .app-main {

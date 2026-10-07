@@ -103,3 +103,10 @@ export function transcriptDownloadUrl(id: number) {
 export function summaryDownloadUrl(id: number) {
   return `/api/v1/interview/${id}/download/summary`;
 }
+
+// Audio normalizado de la entrevista (ADR-023): src del <audio> de la vista
+// de lectura. El backend responde por rangos (206), asi el navegador puede
+// saltar a cualquier minuto sin descargar el archivo entero.
+export function audioUrl(id: number) {
+  return `/api/v1/interview/${id}/audio`;
+}
